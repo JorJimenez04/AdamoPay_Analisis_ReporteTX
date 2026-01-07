@@ -117,11 +117,14 @@ df_completo, clientes_info, lista_clientes = cargar_datos_clientes()
 
 # === SECCIÓN DE INFORMACIÓN GENERAL (Siempre visible) ===
 if df_completo is not None and not df_completo.empty:
+    st.markdown("## 🟦 Capa 1: Métricas del Negocio")
+    st.caption("Indicadores objetivos de operación y comportamiento transaccional")
+    
     st.markdown("### 📊 Vista General del Negocio")
     st.markdown("<p style='color: gray; margin-top: -10px;'>Resumen ejecutivo de clientes activos y métricas clave</p>", unsafe_allow_html=True)
     
     # Métricas generales del negocio
-    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     # Filtrar solo transacciones PAGADAS y VALIDADAS
     if 'ESTADO' in df_completo.columns:
@@ -135,7 +138,6 @@ if df_completo is not None and not df_completo.empty:
     
     tasa_exito_global = (tx_relevantes_global / total_transacciones_global * 100) if total_transacciones_global > 0 else 0
     
-    comision_total_global = df_relevantes['COMISION ((MONTO TOT'].sum() if 'COMISION ((MONTO TOT' in df_relevantes.columns else 0
     promedio_tx_global = df_relevantes['MONTO (COP)'].mean() if 'MONTO (COP)' in df_relevantes.columns else 0
     
     # Calcular métricas por tipo de persona
@@ -158,15 +160,13 @@ if df_completo is not None and not df_completo.empty:
     with col2:
         st.metric("💳 TX Pagadas/Validadas", f"{tx_relevantes_global:,}", delta=f"De {total_transacciones_global:,} totales")
     with col3:
-        st.metric("💰 Volumen Efectivo", f"${monto_total_global:,.0f}", delta=f"Promedio: ${promedio_tx_global:,.0f}")
+        st.metric("💰 Volumen Efectivo", f"$ {monto_total_global:,.0f} COP", delta=f"Promedio: $ {promedio_tx_global:,.0f} COP")
     with col4:
         st.metric("✅ Tasa Efectividad", f"{tasa_exito_global:.1f}%", delta="Pagadas/Validadas")
     with col5:
-        st.metric("💵 Comisiones", f"${comision_total_global:,.0f}", delta="Recaudadas")
+        st.metric("👤 Personas Naturales", f"{tx_pn:,} TX", delta=f"$ {monto_pn:,.0f} COP")
     with col6:
-        st.metric("👤 Personas Naturales", f"{tx_pn:,} TX", delta=f"${monto_pn:,.0f}")
-    with col7:
-        st.metric("🏢 Personas Jurídicas", f"{tx_pj:,} TX", delta=f"${monto_pj:,.0f}")
+        st.metric("🏢 Personas Jurídicas", f"{tx_pj:,} TX", delta=f"$ {monto_pj:,.0f} COP")
     
     st.markdown("---")
     
@@ -182,16 +182,21 @@ if df_completo is not None and not df_completo.empty:
             if i + idx < len(lista_clientes):
                 cliente = lista_clientes[i + idx]
                 df_cliente = df_completo[df_completo['CLIENTE'] == cliente]
-                perfil_gafi = caracterizar_cliente_gafi(df_cliente)
                 
                 with col:
                     # Usar un container para agrupar todo el contenido
                     container = st.container(border=True)
                     
                     with container:
-                        # Calcular métricas simples
-                        total_tx = len(df_cliente)
-                        total_monto = df_cliente['MONTO (COP)'].sum() if 'MONTO (COP)' in df_cliente.columns else 0
+                        # Filtrar solo transacciones PAGADAS y VALIDADAS para métricas principales
+                        if 'ESTADO' in df_cliente.columns:
+                            df_cliente_efectivo = df_cliente[df_cliente['ESTADO'].str.lower().str.contains('pagado|validado', na=False)].copy()
+                        else:
+                            df_cliente_efectivo = df_cliente.copy()
+                        
+                        # Calcular métricas simples (solo TX efectivas)
+                        total_tx = len(df_cliente_efectivo)
+                        total_monto = df_cliente_efectivo['MONTO (COP)'].sum() if 'MONTO (COP)' in df_cliente_efectivo.columns else 0
                         
                         # Calcular tipos de transacción para mostrar
                         tipos_dict = {}
@@ -235,215 +240,93 @@ if df_completo is not None and not df_completo.empty:
                                     margin-bottom: 20px;
                                     box-shadow: 0 3px 10px rgba(102,126,234,0.3);'>
                             <h3 style='margin: 0; color: white; font-size: 22px; font-weight: 600;'>🏢 {cliente}</h3>
-                            <p style='margin: 8px 0 0 0; color: #ffffffee; font-size: 14px;'>
-                                {total_tx:,} transacciones | ${total_monto:,.0f}
-                            </p>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # SECCIÓN: TIPOS DE TRANSACCIÓN
-                        if tipos_dict:
-                            st.markdown("""
-                            <div style='background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 15px;'>
-                                <p style='margin: 0 0 8px 0; font-weight: 600; color: #333;'>📊 Tipos de Transacción</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            tipos_cols = st.columns(len(tipos_dict))
-                            iconos_mini = {'Fondeo': '💰', 'Crédito': '💳', 'Débito': '🏧', 'Otro': '📊'}
-                            for idx_tipo, (tipo, count) in enumerate(tipos_dict.items()):
-                                with tipos_cols[idx_tipo]:
-                                    st.metric(
-                                        label=f"{iconos_mini.get(tipo, '📊')} {tipo}",
-                                        value=f"{count:,}"
-                                    )
-                            st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
+                        # MÉTRICAS PRINCIPALES (máximo 3)
+                        promedio_tx = total_monto / total_tx if total_tx > 0 else 0
+                        metric_cols = st.columns(3)
+                        with metric_cols[0]:
+                            st.metric("📊 Transacciones", f"{total_tx:,}")
+                        with metric_cols[1]:
+                            st.metric("💰 Volumen Total", f"$ {total_monto:,.0f} COP")
+                        with metric_cols[2]:
+                            st.metric("📈 Promedio TX", f"$ {promedio_tx:,.0f} COP")
                         
-                        # SECCIÓN: BENEFICIARIOS
-                        if pn_count > 0 or pj_count > 0:
-                            st.markdown("""
-                            <div style='background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px;'>
-                                <p style='margin: 0; font-weight: 600; color: #333;'>👥 Beneficiarios</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            benef_cols = st.columns(2)
-                            
-                            if pn_count > 0:
-                                with benef_cols[0]:
-                                    pn_pct = (pn_count / total_tx * 100) if total_tx > 0 else 0
-                                    st.metric(
-                                        label="👤 Personas Naturales",
-                                        value=f"{pn_count:,}",
-                                        delta=f"{pn_pct:.1f}%"
-                                    )
-                            
-                            if pj_count > 0:
-                                with benef_cols[1]:
-                                    pj_pct = (pj_count / total_tx * 100) if total_tx > 0 else 0
-                                    st.metric(
-                                        label="🏢 Personas Jurídicas",
-                                        value=f"{pj_count:,}",
-                                        delta=f"{pj_pct:.1f}%"
-                                    )
-                            st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
+                        st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
                         
-                        # SECCIÓN: ESTADOS
-                        if metricas_estado:
-                            st.markdown("""
-                            <div style='background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px;'>
-                                <p style='margin: 0; font-weight: 600; color: #333;'>📋 Estados</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            colores_estado = {
-                                'Pagado': '#4CAF50',
-                                'Validado': '#2196F3',
-                                'Retornado': '#FF9800',
-                                'Rechazado': '#f44336',
-                                'Aprobado': '#9C27B0'
-                            }
+                        # EXPANDER PARA DETALLES OPERATIVOS
+                        with st.expander("📊 Ver detalle operativo"):
                             
-                            emojis_estado = {
-                                'Pagado': '✅',
-                                'Validado': '🔵',
-                                'Retornado': '🔄',
-                                'Rechazado': '❌',
-                                'Aprobado': '👍'
-                            }
+                            # SECCIÓN: TIPOS DE TRANSACCIÓN
+                            if tipos_dict:
+                                st.markdown("**📋 Tipos de Transacción**")
+                                tipos_cols = st.columns(len(tipos_dict))
+                                iconos_mini = {'Fondeo': '💰', 'Crédito': '💳', 'Débito': '🏧', 'Otro': '📊'}
+                                for idx_tipo, (tipo, count) in enumerate(tipos_dict.items()):
+                                    with tipos_cols[idx_tipo]:
+                                        st.metric(
+                                            label=f"{iconos_mini.get(tipo, '📊')} {tipo}",
+                                            value=f"{count:,}"
+                                        )
+                                st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
                             
-                            for estado, datos in metricas_estado.items():
-                                color = colores_estado.get(estado, '#757575')
-                                emoji = emojis_estado.get(estado, '📊')
-                                porcentaje_tx = (datos['tx'] / total_tx * 100) if total_tx > 0 else 0
+                            # SECCIÓN: BENEFICIARIOS
+                            if pn_count > 0 or pj_count > 0:
+                                st.markdown("**👥 Beneficiarios**")
+                                benef_cols = st.columns(2)
                                 
-                                col1, col2, col3 = st.columns([2, 2, 3])
-                                with col1:
-                                    st.markdown(f"**{emoji} {estado}**")
-                                with col2:
-                                    st.caption(f"{datos['tx']:,} TX ({porcentaje_tx:.1f}%)")
-                                with col3:
-                                    st.caption(f"${datos['monto']:,.0f}")
-                            st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-                    
-                        # SECCIÓN: ANÁLISIS GAFI (CON FONDO DIFERENCIADO)
-                        st.markdown("""
-                        <div style='background: linear-gradient(to right, #fff3e0, #ffe0b2); 
-                                    padding: 15px; 
-                                    border-radius: 10px; 
-                                    border: 2px solid #ffb74d;
-                                    margin-top: 20px;
-                                    box-shadow: 0 2px 8px rgba(255,183,77,0.2);'>
-                            <h4 style='margin: 0 0 10px 0; color: #e65100;'>🧭 Análisis de Riesgo GAFI</h4>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-                        
-                        # Score de riesgo con color
-                        nivel_riesgo = perfil_gafi["nivel_riesgo_inicial"]
-                        score_riesgo = perfil_gafi["score_riesgo"]
-                        
-                        # Colores según nivel de riesgo
-                        color_riesgo = {
-                            "Bajo": "#4CAF50",
-                            "Medio": "#FF9800", 
-                            "Alto": "#f44336",
-                            "No Evaluado": "#757575"
-                        }
-                        
-                        emoji_riesgo = {
-                            "Bajo": "✅",
-                            "Medio": "⚠️",
-                            "Alto": "🚨",
-                            "No Evaluado": "❓"
-                        }
-                        
-                        # Visualización del score
-                        col_score1, col_score2 = st.columns([1, 2])
-                        with col_score1:
-                            st.metric(
-                                label="Score de Riesgo",
-                                value=f"{score_riesgo}/100",
-                                delta=None
-                            )
-                        with col_score2:
-                            st.markdown(f"""
-                            <div style='background: {color_riesgo.get(nivel_riesgo, "#757575")}; 
-                                        padding: 12px; 
-                                        border-radius: 8px; 
-                                        text-align: center;
-                                        box-shadow: 0 2px 6px rgba(0,0,0,0.15);'>
-                                <h3 style='margin: 0; color: white; font-size: 18px;'>{emoji_riesgo.get(nivel_riesgo, "❓")} {nivel_riesgo}</h3>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        st.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
-                        
-                        # Banderas de riesgo
-                        banderas = perfil_gafi["banderas_riesgo"]
-                        if banderas:
-                            st.markdown(f"""
-                            <div style='background: #fff3e0; padding: 10px; border-radius: 6px; margin-bottom: 10px;'>
-                                <strong>🚩 Banderas Detectadas: {len(banderas)}</strong>
-                            </div>
-                            """, unsafe_allow_html=True)
+                                if pn_count > 0:
+                                    with benef_cols[0]:
+                                        pn_pct = (pn_count / total_tx * 100) if total_tx > 0 else 0
+                                        st.metric(
+                                            label="👤 Personas Naturales",
+                                            value=f"{pn_count:,}",
+                                            delta=f"{pn_pct:.1f}%"
+                                        )
+                                
+                                if pj_count > 0:
+                                    with benef_cols[1]:
+                                        pj_pct = (pj_count / total_tx * 100) if total_tx > 0 else 0
+                                        st.metric(
+                                            label="🏢 Personas Jurídicas",
+                                            value=f"{pj_count:,}",
+                                            delta=f"{pj_pct:.1f}%"
+                                        )
+                                st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
                             
-                            for bandera in banderas:
-                                # Color según severidad
-                                color_severidad = {
-                                    "Alta": "#f44336",
-                                    "Media": "#FF9800",
-                                    "Baja": "#2196F3"
-                                }
-                                emoji_severidad = {
-                                    "Alta": "🔴",
-                                    "Media": "🟡",
-                                    "Baja": "🔵"
+                            # SECCIÓN: ESTADOS
+                            if metricas_estado:
+                                st.markdown("**📋 Estados de Transacciones**")
+                                # Colores con enfoque en compliance: estados críticos más visibles
+                                colores_estado = {
+                                    'Pagado': '#9E9E9E',      # Gris - menos relevante para compliance
+                                    'Validado': '#FF6B35',    # Naranja fuerte - requiere atención
+                                    'Retornado': '#FF1744',   # Rojo intenso - crítico
+                                    'Rechazado': '#D50000',   # Rojo oscuro - muy crítico
+                                    'Aprobado': '#757575'     # Gris oscuro - neutral
                                 }
                                 
-                                severidad = bandera.get('severidad', 'Media')
-                                st.markdown(f"""
-                                <div style='background: {color_severidad.get(severidad, "#757575")}15; 
-                                            border-left: 5px solid {color_severidad.get(severidad, "#757575")};
-                                            padding: 12px; 
-                                            margin: 8px 0; 
-                                            border-radius: 5px;
-                                            box-shadow: 0 1px 4px rgba(0,0,0,0.1);'>
-                                    <strong>{emoji_severidad.get(severidad, "🔸")} {bandera.get('tipo', 'Sin tipo')}</strong> 
-                                    <span style='color: gray; font-size: 13px;'>({severidad})</span><br/>
-                                    <small style='color: #555;'>{bandera.get('descripcion', 'Sin descripción')}</small><br/>
-                                    <small style='color: #666; background: #f5f5f5; padding: 3px 6px; border-radius: 3px; display: inline-block; margin-top: 5px;'>
-                                        💡 {bandera.get('accion', 'Revisar manualmente')}
-                                    </small>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        else:
-                            st.markdown("""
-                            <div style='background: #e8f5e9; 
-                                        border-left: 5px solid #4CAF50; 
-                                        padding: 12px; 
-                                        border-radius: 5px;
-                                        margin: 10px 0;'>
-                                <strong>✅ Sin banderas de riesgo detectadas</strong>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # Métricas clave consolidadas (colapsable)
-                        with st.expander("📊 Ver métricas detalladas"):
-                            metricas = perfil_gafi["metricas_consolidadas"]
-                            
-                            col_m1, col_m2, col_m3 = st.columns(3)
-                            with col_m1:
-                                st.metric("TX Exitosas", f"{metricas.get('tx_exitosas', 0):,}")
-                                st.metric("Días Activo", metricas.get('dias_activo', 0))
-                            with col_m2:
-                                st.metric("Frecuencia", f"{metricas.get('frecuencia_diaria', 0):.2f} TX/día")
-                                st.metric("Tasa Rechazo", f"{metricas.get('tasa_rechazo', 0):.1f}%")
-                            with col_m3:
-                                st.metric("Desv. Estándar", f"${metricas.get('desviacion_std', 0):,.0f}")
-                                st.metric("Diversidad Tipos", metricas.get('diversidad_tipos', 0))
-                            
-                            # Timestamp del análisis
-                            timestamp = perfil_gafi.get('timestamp_analisis', 'N/A')
-                            st.caption(f"⏱️ Análisis realizado: {timestamp}")
+                                emojis_estado = {
+                                    'Pagado': '✅',
+                                    'Validado': '⚠️',         # Cambio a advertencia
+                                    'Retornado': '🔴',        # Más crítico
+                                    'Rechazado': '❌',
+                                    'Aprobado': '👍'
+                                }
+                                
+                                for estado, datos in metricas_estado.items():
+                                    color = colores_estado.get(estado, '#757575')
+                                    emoji = emojis_estado.get(estado, '📊')
+                                    porcentaje_tx = (datos['tx'] / total_tx * 100) if total_tx > 0 else 0
+                                    
+                                    col1, col2, col3 = st.columns([2, 2, 3])
+                                    with col1:
+                                        st.markdown(f"**{emoji} {estado}**")
+                                    with col2:
+                                        st.caption(f"{datos['tx']:,} TX ({porcentaje_tx:.1f}%)")
+                                    with col3:
+                                        st.caption(f"$ {datos['monto']:,.0f} COP")
                     
                     # Cerrar contenedor visual de la tarjeta
                     st.markdown("<div style='margin-bottom: 40px;'></div>", unsafe_allow_html=True)
@@ -541,6 +424,8 @@ if df_completo is not None and not df_completo.empty:
     
     # === INFORMACIÓN GENERAL DE CLIENTES ===
     st.markdown("### 👥 Información General de Clientes")
+    st.markdown("#### 🟦 Capa 1: Datos Transaccionales")
+    st.caption("Métricas operativas y comportamiento del cliente")
     
     # Crear tabs para cada cliente
     tabs = st.tabs([f"📋 {cliente}" for cliente in lista_clientes])
@@ -602,7 +487,7 @@ if df_completo is not None and not df_completo.empty:
                 <div style='background: #f8f9fa; padding: 15px; border-radius: 10px; 
                             border-left: 4px solid #2196F3; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
                     <p style='margin: 0; color: #666; font-size: 12px;'>💰 Monto Total</p>
-                    <h3 style='margin: 5px 0; color: #2c3e50; font-size: 24px;'>${monto_total_cliente:,.0f}</h3>
+                    <h3 style='margin: 5px 0; color: #2c3e50; font-size: 24px;'>$ {monto_total_cliente:,.0f} COP</h3>
                     <p style='margin: 0; color: #2196F3; font-size: 11px;'>Transaccionado</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -612,7 +497,7 @@ if df_completo is not None and not df_completo.empty:
                 <div style='background: #f8f9fa; padding: 15px; border-radius: 10px; 
                             border-left: 4px solid #FF9800; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
                     <p style='margin: 0; color: #666; font-size: 12px;'>📈 Promedio TX</p>
-                    <h3 style='margin: 5px 0; color: #2c3e50; font-size: 24px;'>${monto_promedio_cliente:,.0f}</h3>
+                    <h3 style='margin: 5px 0; color: #2c3e50; font-size: 24px;'>$ {monto_promedio_cliente:,.0f} COP</h3>
                     <p style='margin: 0; color: #FF9800; font-size: 11px;'>Por transacción</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -650,9 +535,9 @@ if df_completo is not None and not df_completo.empty:
             with col1:
                 st.markdown("#### 📊 Resumen de Actividad")
                 
-                if 'TIPO DE TRA' in df_cliente.columns:
-                    tipos_tx = df_cliente['TIPO DE TRA'].value_counts()
-                    st.markdown("**Tipos de Transacciones:**")
+                if 'TIPO DE TRA' in df_cliente_efectivo.columns:
+                    tipos_tx = df_cliente_efectivo['TIPO DE TRA'].value_counts()
+                    st.markdown("**Tipos de Transacciones (Efectivas):**")
                     for tipo, cantidad in tipos_tx.items():
                         st.write(f"• {tipo}: {cantidad:,}")
                 
@@ -672,9 +557,9 @@ if df_completo is not None and not df_completo.empty:
                     monto_max = df_cliente_efectivo['MONTO (COP)'].max()
                     monto_mediana = df_cliente_efectivo['MONTO (COP)'].median()
                     
-                    st.write(f"**Monto Mínimo:** ${monto_min:,.0f}")
-                    st.write(f"**Monto Mediana:** ${monto_mediana:,.0f}")
-                    st.write(f"**Monto Máximo:** ${monto_max:,.0f}")
+                    st.write(f"**Monto Mínimo:** $ {monto_min:,.0f} COP")
+                    st.write(f"**Monto Mediana:** $ {monto_mediana:,.0f} COP")
+                    st.write(f"**Monto Máximo:** $ {monto_max:,.0f} COP")
                 
                 st.markdown("---")
                 
@@ -682,17 +567,338 @@ if df_completo is not None and not df_completo.empty:
                     comision_total = df_cliente_efectivo['COMISION ((MONTO TOT'].sum()
                     comision_promedio = df_cliente_efectivo['COMISION ((MONTO TOT'].mean()
                     
-                    st.write(f"**Comisión Total:** ${comision_total:,.0f}")
-                    st.write(f"**Comisión Promedio:** ${comision_promedio:,.0f}")
+                    st.write(f"**Comisión Total:** $ {comision_total:,.0f} COP")
+                    st.write(f"**Comisión Promedio:** $ {comision_promedio:,.0f} COP")
             
             # Tabla de transacciones recientes
             st.markdown("---")
             st.markdown("#### 📋 Últimas 50 Transacciones")
             st.dataframe(df_cliente.head(50), use_container_width=True, height=300)
             
+            # === TOP BENEFICIARIOS Y BANCOS (GRÁFICOS INTERACTIVOS) ===
+            st.markdown("---")
+            st.markdown("#### 🎯 Análisis de Participación")
+            st.markdown("<p style='color: gray; margin-top: -10px;'>Beneficiarios y entidades bancarias con mayor actividad</p>", unsafe_allow_html=True)
+            
+            # Buscar columnas de beneficiario
+            columnas_beneficiario = [col for col in df_cliente_efectivo.columns if 'BENEFICIARIO' in col.upper() or 'NOMBRE' in col.upper()]
+            columna_beneficiario = None
+            
+            # Priorizar columnas que contengan BENEFICIARIO
+            for col in columnas_beneficiario:
+                if 'BENEFICIARIO' in col.upper() and 'NOMBRE' in col.upper():
+                    columna_beneficiario = col
+                    break
+            
+            if not columna_beneficiario and columnas_beneficiario:
+                columna_beneficiario = columnas_beneficiario[0]
+            
+            if columna_beneficiario and columna_beneficiario in df_cliente_efectivo.columns:
+                # Preparar datos de beneficiarios
+                df_beneficiarios_full = df_cliente_efectivo.groupby(columna_beneficiario).agg({
+                    'MONTO (COP)': ['count', 'sum', 'mean']
+                }).reset_index()
+                
+                df_beneficiarios_full.columns = ['Beneficiario', 'TX', 'Monto Total', 'Monto Promedio']
+                df_beneficiarios_full['% Participación'] = (df_beneficiarios_full['Monto Total'] / monto_total_cliente * 100).round(2)
+                
+                # Agregar tipo de persona
+                if 'TIPO_PERSONA' in df_cliente_efectivo.columns:
+                    tipo_persona_map = df_cliente_efectivo.groupby(columna_beneficiario)['TIPO_PERSONA'].first()
+                    df_beneficiarios_full['Tipo'] = df_beneficiarios_full['Beneficiario'].map(tipo_persona_map)
+                else:
+                    df_beneficiarios_full['Tipo'] = 'Desconocido'
+                
+                # Separar por tipo
+                df_pn = df_beneficiarios_full[df_beneficiarios_full['Tipo'] == 'Natural'].copy()
+                df_pj = df_beneficiarios_full[df_beneficiarios_full['Tipo'] == 'Jurídica'].copy()
+                
+                # === PERSONAS NATURALES ===
+                st.markdown("##### 👤 Personas Naturales")
+                
+                if len(df_pn) > 0:
+                    df_pn_top = df_pn.sort_values('Monto Total', ascending=True).tail(10)
+                    df_pn_top['Beneficiario Display'] = df_pn_top['Beneficiario'].apply(
+                        lambda x: f"👤 {str(x)[:40]}{'...' if len(str(x)) > 40 else ''}"
+                    )
+                    
+                    # Gráfico PN con colores profesionales azul/cyan
+                    fig_pn = px.bar(
+                        df_pn_top,
+                        y='Beneficiario Display',
+                        x='Monto Total',
+                        orientation='h',
+                        text='TX',
+                        color='Monto Total',
+                        color_continuous_scale=[[0, '#E3F2FD'], [0.3, '#90CAF9'], [0.6, '#42A5F5'], [1, '#1565C0']],
+                        labels={
+                            'Monto Total': 'Volumen Total (COP)',
+                            'Beneficiario Display': ''
+                        },
+                        hover_data={
+                            'TX': True,
+                            'Monto Promedio': ':,.0f',
+                            '% Participación': ':.2f',
+                            'Monto Total': ':,.0f',
+                            'Beneficiario Display': False
+                        }
+                    )
+                    
+                    fig_pn.update_traces(
+                        texttemplate='<b>%{text} TX</b>',
+                        textposition='outside',
+                        textfont_size=10,
+                        textfont_color='#1565C0',
+                        marker_line_color='#0D47A1',
+                        marker_line_width=1
+                    )
+                    
+                    fig_pn.update_layout(
+                        height=400,
+                        showlegend=False,
+                        xaxis_title="Volumen Total (COP)",
+                        yaxis_title="",
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        font=dict(size=11, color='#37474F'),
+                        xaxis=dict(
+                            tickformat='$ ,.0f COP',
+                            gridcolor='rgba(66,165,245,0.15)',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            showgrid=False
+                        ),
+                        plot_bgcolor='rgba(227,242,253,0.15)',
+                        paper_bgcolor='white',
+                        coloraxis_showscale=False
+                    )
+                    
+                    st.plotly_chart(fig_pn, use_container_width=True)
+                    
+                    # Métricas PN
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    with col_a:
+                        st.metric("👥 Total PN", f"{len(df_pn):,}", "beneficiarios")
+                    with col_b:
+                        volumen_pn = df_pn['Monto Total'].sum()
+                        st.metric("💰 Volumen PN", f"$ {volumen_pn:,.0f} COP")
+                    with col_c:
+                        top3_pn = df_pn_top.tail(3)['Monto Total'].sum()
+                        concentracion_pn = (top3_pn / volumen_pn * 100) if volumen_pn > 0 else 0
+                        st.metric("🥇 Top 3", f"{concentracion_pn:.1f}%", "concentración")
+                    with col_d:
+                        if concentracion_pn > 70:
+                            st.error("⚠️ Alta")
+                        elif concentracion_pn > 50:
+                            st.warning("⚡ Moderada")
+                        else:
+                            st.success("✅ Diversificado")
+                else:
+                    st.info("📊 No hay personas naturales en los datos")
+                
+                st.markdown("<div style='margin: 30px 0;'></div>", unsafe_allow_html=True)
+                
+                # === PERSONAS JURÍDICAS ===
+                st.markdown("##### 🏢 Personas Jurídicas")
+                
+                if len(df_pj) > 0:
+                    df_pj_top = df_pj.sort_values('Monto Total', ascending=True).tail(10)
+                    df_pj_top['Beneficiario Display'] = df_pj_top['Beneficiario'].apply(
+                        lambda x: f"🏢 {str(x)[:40]}{'...' if len(str(x)) > 40 else ''}"
+                    )
+                    
+                    # Gráfico PJ con colores profesionales naranja/ámbar
+                    fig_pj = px.bar(
+                        df_pj_top,
+                        y='Beneficiario Display',
+                        x='Monto Total',
+                        orientation='h',
+                        text='TX',
+                        color='Monto Total',
+                        color_continuous_scale=[[0, '#FFF3E0'], [0.3, '#FFB74D'], [0.6, '#FF9800'], [1, '#E65100']],
+                        labels={
+                            'Monto Total': 'Volumen Total (COP)',
+                            'Beneficiario Display': ''
+                        },
+                        hover_data={
+                            'TX': True,
+                            'Monto Promedio': ':,.0f',
+                            '% Participación': ':.2f',
+                            'Monto Total': ':,.0f',
+                            'Beneficiario Display': False
+                        }
+                    )
+                    
+                    fig_pj.update_traces(
+                        texttemplate='<b>%{text} TX</b>',
+                        textposition='outside',
+                        textfont_size=10,
+                        textfont_color='#E65100',
+                        marker_line_color='#BF360C',
+                        marker_line_width=1
+                    )
+                    
+                    fig_pj.update_layout(
+                        height=400,
+                        showlegend=False,
+                        xaxis_title="Volumen Total (COP)",
+                        yaxis_title="",
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        font=dict(size=11, color='#37474F'),
+                        xaxis=dict(
+                            tickformat='$ ,.0f COP',
+                            gridcolor='rgba(255,152,0,0.15)',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            showgrid=False
+                        ),
+                        plot_bgcolor='rgba(255,243,224,0.15)',
+                        paper_bgcolor='white',
+                        coloraxis_showscale=False
+                    )
+                    
+                    st.plotly_chart(fig_pj, use_container_width=True)
+                    
+                    # Métricas PJ
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    with col_a:
+                        st.metric("🏢 Total PJ", f"{len(df_pj):,}", "beneficiarios")
+                    with col_b:
+                        volumen_pj = df_pj['Monto Total'].sum()
+                        st.metric("💰 Volumen PJ", f"$ {volumen_pj:,.0f} COP")
+                    with col_c:
+                        top3_pj = df_pj_top.tail(3)['Monto Total'].sum()
+                        concentracion_pj = (top3_pj / volumen_pj * 100) if volumen_pj > 0 else 0
+                        st.metric("🥇 Top 3", f"{concentracion_pj:.1f}%", "concentración")
+                    with col_d:
+                        if concentracion_pj > 70:
+                            st.error("⚠️ Alta")
+                        elif concentracion_pj > 50:
+                            st.warning("⚡ Moderada")
+                        else:
+                            st.success("✅ Diversificado")
+                else:
+                    st.info("📊 No hay personas jurídicas en los datos")
+            else:
+                st.info("📊 No se encontró información de beneficiarios en los datos")
+            
+            st.markdown("<div style='margin: 40px 0;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin: 40px 0;'></div>", unsafe_allow_html=True)
+            
+            # === TOP BANCOS ===
+            st.markdown("##### 🏦 Top Bancos por Volumen")
+            
+            # Buscar columnas de banco
+            columnas_banco = [col for col in df_cliente_efectivo.columns if 'BANCO' in col.upper()]
+            columna_banco = None
+            
+            # Priorizar columnas que contengan BANCO BENEFICIARIO o similar
+            for col in columnas_banco:
+                if 'BENEFICIARIO' in col.upper() or 'DESTINO' in col.upper():
+                    columna_banco = col
+                    break
+            
+            if not columna_banco and columnas_banco:
+                columna_banco = columnas_banco[0]
+            
+            if columna_banco and columna_banco in df_cliente_efectivo.columns:
+                # Agrupar por banco
+                df_bancos = df_cliente_efectivo.groupby(columna_banco).agg({
+                    'MONTO (COP)': ['count', 'sum', 'mean']
+                }).reset_index()
+                
+                df_bancos.columns = ['Banco', 'TX', 'Monto Total', 'Monto Promedio']
+                df_bancos['% Participación'] = (df_bancos['Monto Total'] / monto_total_cliente * 100).round(2)
+                
+                # Formatear nombre del banco
+                df_bancos['Banco Display'] = df_bancos['Banco'].apply(
+                    lambda x: f"🏦 {str(x)[:40]}{'...' if len(str(x)) > 40 else ''}"
+                )
+                
+                # Ordenar y tomar top 10
+                df_bancos = df_bancos.sort_values('Monto Total', ascending=True).tail(10)
+                
+                # Crear gráfico de barras horizontales con colores profesionales verde/teal
+                fig_bancos = px.bar(
+                    df_bancos,
+                    y='Banco Display',
+                    x='Monto Total',
+                    orientation='h',
+                    text='TX',
+                    color='Monto Total',
+                    color_continuous_scale=[[0, '#E0F2F1'], [0.3, '#4DB6AC'], [0.6, '#00897B'], [1, '#004D40']],
+                    labels={
+                        'Monto Total': 'Volumen Total (COP)',
+                        'Banco Display': ''
+                    },
+                    hover_data={
+                        'TX': True,
+                        'Monto Promedio': ':,.0f',
+                        '% Participación': ':.2f',
+                        'Monto Total': ':,.0f',
+                        'Banco Display': False
+                    }
+                )
+                
+                fig_bancos.update_traces(
+                    texttemplate='<b>%{text} TX</b>',
+                    textposition='outside',
+                    textfont_size=10,
+                    textfont_color='#004D40',
+                    marker_line_color='#00251A',
+                    marker_line_width=1
+                )
+                
+                fig_bancos.update_layout(
+                    height=450,
+                    showlegend=False,
+                    xaxis_title="Volumen Total (COP)",
+                    yaxis_title="",
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    font=dict(size=11, color='#37474F'),
+                    xaxis=dict(
+                        tickformat='$ ,.0f COP',
+                        gridcolor='rgba(0,137,123,0.15)',
+                        showgrid=True
+                    ),
+                    yaxis=dict(
+                        showgrid=False
+                    ),
+                    plot_bgcolor='rgba(224,242,241,0.15)',
+                    paper_bgcolor='white',
+                    coloraxis_showscale=False
+                )
+                
+                st.plotly_chart(fig_bancos, use_container_width=True)
+                
+                # Métricas resumen bancos
+                col_a, col_b, col_c, col_d = st.columns(4)
+                with col_a:
+                    st.metric("🏦 Total Bancos", f"{len(df_bancos):,}", "entidades")
+                with col_b:
+                    volumen_bancos = df_bancos['Monto Total'].sum()
+                    st.metric("💰 Volumen", f"$ {volumen_bancos:,.0f} COP")
+                with col_c:
+                    top3_bancos = df_bancos.tail(3)['Monto Total'].sum()
+                    concentracion_bancos = (top3_bancos / volumen_bancos * 100) if volumen_bancos > 0 else 0
+                    st.metric("🥇 Top 3", f"{concentracion_bancos:.1f}%", "concentración")
+                with col_d:
+                    if concentracion_bancos > 70:
+                        st.error("⚠️ Alta")
+                    elif concentracion_bancos > 50:
+                        st.warning("⚡ Moderada")
+                    else:
+                        st.success("✅ Diversificado")
+            else:
+                st.info("🏦 No se encontró información de bancos en los datos")
+            
             # 🆕 ANÁLISIS DE RIESGO INTEGRAL
             st.markdown("---")
-            st.markdown("## 🎯 Análisis de Riesgo Integral")
+            st.markdown("## 🟥 Capa 2: Evaluación de Riesgo y Cumplimiento")
+            st.caption("Interpretación regulatoria y señales de riesgo derivadas del comportamiento")
+            
+            st.markdown("### 🎯 Análisis de Riesgo Integral")
             st.markdown("<p style='color: gray; margin-top: -10px;'>Sistema completo de evaluación multicapa (GAFI + UIAF + Operativo)</p>", unsafe_allow_html=True)
             
             # Obtener perfil GAFI para pasar al análisis de riesgo
