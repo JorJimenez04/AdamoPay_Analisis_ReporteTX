@@ -45,6 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Cambio de prueba para aprender commits
+# Ejercicio para agregar commits y cargarlos a Github
 # =========================
 # Helpers de normalización
 # =========================
