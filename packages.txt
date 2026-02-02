@@ -1,0 +1,10 @@
+# Dependencias del sistema operativo para Streamlit Cloud
+# Este archivo es opcional, solo si necesitas paquetes de Linux
+
+# Ejemplo de dependencias comunes:
+# libpq-dev  # Para PostgreSQL
+# libgomp1   # Para OpenMP
+# build-essential  # Compiladores
+
+# Para este proyecto no se requieren dependencias adicionales del SO
+# ya que todas las librerías Python están en requirements.txt

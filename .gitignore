@@ -47,7 +47,10 @@ outputs/
 !data/Data_Clients&TX.xlsx
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
+.streamlit/cache/
+
+# IMPORTANTE: NO excluir .streamlit/config.toml (se necesita para producción)
 
 # Jupyter
 .ipynb_checkpoints/
@@ -57,3 +60,11 @@ outputs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Reportes PDF generados
+*.pdf
+reportes/
+
+# Temporal
+*.tmp
+*.bak

@@ -1,0 +1,35 @@
+[theme]
+# Tema corporativo de AdamoPay
+primaryColor = "#4a90e2"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#f8f9fa"
+textColor = "#1c2a38"
+font = "sans serif"
+
+[server]
+# Configuración del servidor
+headless = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+# Configuración del navegador
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[runner]
+# Configuración de ejecución
+magicEnabled = true
+fastReruns = true
+
+[client]
+# Configuración del cliente
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[logger]
+# Configuración de logs
+level = "info"
+messageFormat = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

@@ -19,6 +19,22 @@ RISK_THRESHOLDS = {
 REPORT_FORMAT = "PDF"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Configuración de validación de datos
+ESTADOS_EFECTIVOS = ['PAGADO', 'VALIDADO']
+TIPOS_PERSONA_NATURAL = ['C', 'CC', 'PA', 'CE', 'CEDULA']
+TIPOS_PERSONA_JURIDICA = ['N', 'NIT']
+
+# Columnas requeridas en el Excel
+COLUMNAS_REQUERIDAS = ['fecha', 'monto_cop', 'estado']
+COLUMNAS_CRITICAS = ['fecha', 'monto_cop', 'estado', 'tipo_tx', 'beneficiario']
+
+# Configuración de caché
+CACHE_TTL = 60  # segundos
+
+# Configuración de logging
+LOG_LEVEL = "INFO"
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
 # Configuración de base de datos (si aplica)
 # DATABASE_CONFIG = {
 #     "host": "localhost",
