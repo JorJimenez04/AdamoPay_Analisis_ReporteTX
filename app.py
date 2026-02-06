@@ -10,9 +10,6 @@ Aplicación web (Streamlit) para el sistema de análisis y reporte transaccional
 
 import sys
 from pathlib import Path
-# ✅ Agregar el directorio src al path (ANTES de importar módulos internos)
-sys.path.append(str(Path(__file__).parent / "src"))
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -23,11 +20,8 @@ import logging
 import gc
 from datetime import datetime
 
-
-# Tipos para anotaciones
-from config.settings import ESTADOS_EFECTIVOS
-from src.analytics.business_metrics import calcular_business_metrics
-
+# ✅ Agregar el directorio src al path (ANTES de importar módulos internos)
+sys.path.append(str(Path(__file__).parent / "src"))
 
 from config.settings import (
     ESTADOS_EFECTIVOS,
@@ -42,6 +36,7 @@ from config.settings import (
 from config.ui_config import obtener_configuracion
 from src.characterization.base_characterization import caracterizar_cliente_gafi
 from src.risk_analysis import analizar_riesgo_cliente
+from src.analytics.business_metrics import calcular_business_metrics
 
 # Configuración de logging
 logging.basicConfig(
