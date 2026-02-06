@@ -36,7 +36,7 @@ from config.settings import (
 from config.ui_config import obtener_configuracion
 from src.characterization.base_characterization import caracterizar_cliente_gafi
 from src.risk_analysis import analizar_riesgo_cliente
-from src.analytics.business_metrics import calcular_business_metrics
+# from src.analytics.business_metrics import calcular_business_metrics  # Temporalmente deshabilitado
 
 # Configuración de logging
 logging.basicConfig(
@@ -1110,18 +1110,10 @@ st.caption("Indicadores objetivos de operación y comportamiento transaccional")
 # Global: TX efectivas
 df_relevantes = df_completo[df_completo["tx_efectiva"]].copy()
 
-# ✅ Métricas globales: usar módulo (para no duplicar lógica)
-bm = calcular_business_metrics(
-    df_completo,
-    col_fecha="fecha",
-    col_monto="monto_cop",
-    col_estado="estado",
-    estados_efectivos=ESTADOS_EFECTIVOS
-)
-# Mantener tus variables existentes (compatibilidad con todo lo que viene después)
-total_transacciones_global = bm.tx_total
-tx_relevantes_global = bm.tx_efectivas
-tasa_exito_global = bm.efectividad * 100
+# Métricas globales calculadas directamente
+total_transacciones_global = len(df_completo)
+tx_relevantes_global = len(df_relevantes)
+tasa_exito_global = (tx_relevantes_global / total_transacciones_global * 100) if total_transacciones_global > 0 else 0.0
 
 monto_total_global = float(df_relevantes["monto_cop"].sum()) if "monto_cop" in df_relevantes.columns else 0.0
 promedio_tx_global = float(df_relevantes["monto_cop"].mean()) if len(df_relevantes) else 0.0
