@@ -44,8 +44,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Cambio de prueba para aprender commits
-# Ejercicio para agregar commits y cargarlos a Github
+
 # =========================
 # Helpers de normalización
 # =========================
@@ -85,6 +84,70 @@ def _safe(s: str) -> str:
     return html.escape(str(s))
 
 
+def normalizar_nombre_entidad(nombre: str) -> str:
+    """
+    Normaliza nombres de beneficiarios y bancos para evitar duplicados por variaciones sintácticas.
+    
+    Transformaciones aplicadas:
+    - Convierte a mayúsculas
+    - Elimina espacios múltiples
+    - Elimina puntos, comas, guiones
+    - Elimina artículos y palabras comunes
+    - Estandariza formas jurídicas (S.A.S -> SAS, LTDA -> LIMITADA)
+    
+    Ejemplos:
+        "JL Outsurcer SAS" -> "JLOUTSOURCERSAS"
+        "JLOutsourcer S.A.S." -> "JLOUTSOURCERSAS"
+        "Banco de Bogotá" -> "BANCOBOGOTA"
+        "Bancolombia S.A." -> "BANCOLOMBIASA"
+    """
+    import re
+    
+    if pd.isna(nombre) or nombre is None:
+        return "DESCONOCIDO"
+    
+    # Convertir a string y mayúsculas
+    nombre_norm = str(nombre).upper().strip()
+    
+    # Eliminar caracteres especiales y puntuación
+    nombre_norm = re.sub(r'[.,\-_/\\(){}\[\]<>@#$%^&*+=|~`\'"°]', ' ', nombre_norm)
+    
+    # Normalizar formas jurídicas comunes
+    formas_juridicas = {
+        r'\bS\.?\s*A\.?\s*S\.?\b': 'SAS',
+        r'\bS\.?\s*A\.?\b': 'SA',
+        r'\bLTDA\.?\b': 'LIMITADA',
+        r'\bE\.?\s*U\.?\b': 'EU',
+        r'\bCIA\.?\b': 'COMPANIA',
+        r'\bCO\.?\b': 'COMPANIA',
+        r'\bCORP\.?\b': 'CORPORACION',
+        r'\bINC\.?\b': 'INCORPORATED',
+    }
+    
+    for patron, reemplazo in formas_juridicas.items():
+        nombre_norm = re.sub(patron, reemplazo, nombre_norm)
+    
+    # Eliminar artículos y palabras conectoras comunes (entre espacios)
+    palabras_eliminar = [
+        r'\bDE\b', r'\bLA\b', r'\bEL\b', r'\bLOS\b', r'\bLAS\b',
+        r'\bY\b', r'\bE\b', r'\bO\b', r'\bU\b',
+        r'\bDEL\b', r'\bAL\b'
+    ]
+    
+    for palabra in palabras_eliminar:
+        # Solo eliminar si está entre espacios (no parte de otra palabra)
+        nombre_norm = re.sub(f' {palabra} ', ' ', nombre_norm)
+    
+    # Eliminar todos los espacios
+    nombre_norm = re.sub(r'\s+', '', nombre_norm)
+    
+    # Si quedó vacío, retornar desconocido
+    if not nombre_norm:
+        return "DESCONOCIDO"
+    
+    return nombre_norm
+
+
 def formato_moneda(valor: float, incluir_signo: bool = True) -> str:
     """Formato consistente para moneda."""
     if valor >= 0:
@@ -105,31 +168,50 @@ def validar_columnas_cliente(df: pd.DataFrame, nombre_cliente: str) -> list:
 # Carga de datos desde Excel
 # =========================
 @st.cache_data(ttl=CACHE_TTL)
-def cargar_datos_clientes():
+def cargar_datos_clientes(archivo_subido=None):
     """
     Carga datos desde Excel (cada hoja = un cliente/originador) y crea:
     - columnas canónicas (snake_case)
     - columnas legacy (compatibilidad con tu código/módulos previos si las usan)
+    
+    Args:
+        archivo_subido: Archivo Excel subido por el usuario (UploadedFile de Streamlit)
+                       Si es None, intenta cargar desde ruta local (modo desarrollo)
     """
-    ruta_excel = Path(__file__).parent / "data" / "Data_Clients&TX.xlsx"
+    excel_file = None
     
-    # Validar que el archivo existe
-    if not ruta_excel.exists():
-        logger.error(f"Archivo Excel no encontrado: {ruta_excel}")
-        st.error(f"⚠️ Archivo no encontrado: {ruta_excel}")
-        return None, None, None
-    
-    logger.info(f"Cargando datos desde: {ruta_excel}")
-    
-    try:
-        excel_file = pd.ExcelFile(ruta_excel)
-    except Exception as e:
-        logger.error(f"Error abriendo archivo Excel: {str(e)}")
-        st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
-        return None, None, None
+    # Si se proporciona un archivo subido, usarlo
+    if archivo_subido is not None:
+        logger.info(f"Cargando datos desde archivo subido: {archivo_subido.name}")
+        try:
+            excel_file = pd.ExcelFile(archivo_subido)
+        except Exception as e:
+            logger.error(f"Error abriendo archivo Excel subido: {str(e)}")
+            st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
+            return None, None, None
+    else:
+        # Modo desarrollo: intentar cargar desde ruta local
+        ruta_excel = Path(__file__).parent / "data" / "Data_Clients&TX.xlsx"
+        
+        if not ruta_excel.exists():
+            logger.warning(f"Archivo Excel local no encontrado: {ruta_excel}")
+            return None, None, None
+        
+        logger.info(f"Cargando datos desde ruta local: {ruta_excel}")
+        
+        try:
+            excel_file = pd.ExcelFile(ruta_excel)
+        except Exception as e:
+            logger.error(f"Error abriendo archivo Excel local: {str(e)}")
+            st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
+            return None, None, None
 
     frames = []
     clientes_info = {}
+    
+    # Diccionarios para mapeo de nombres normalizados a nombres canónicos
+    beneficiarios_normalizados = {}
+    bancos_normalizados = {}
 
     # Mapeo Excel -> canónico
     col_map = {
@@ -188,10 +270,52 @@ def cargar_datos_clientes():
             if c in df.columns:
                 df[c] = df[c].map(_clean_text)
 
-        # Normalizaciones útiles
+        # ==========================================
+        # NORMALIZACIÓN AVANZADA DE BENEFICIARIOS
+        # ==========================================
+        if "beneficiario" in df.columns:
+            # Crear columna normalizada
+            df["beneficiario_norm"] = df["beneficiario"].apply(normalizar_nombre_entidad)
+            
+            # Mantener el primer nombre original encontrado para cada versión normalizada
+            for idx, row in df.iterrows():
+                nombre_original = row["beneficiario"]
+                nombre_normalizado = row["beneficiario_norm"]
+                
+                if nombre_normalizado not in beneficiarios_normalizados and pd.notna(nombre_original):
+                    beneficiarios_normalizados[nombre_normalizado] = nombre_original
+            
+            # Reemplazar con el nombre canónico (el primero que se encontró)
+            df["beneficiario_canonico"] = df["beneficiario_norm"].map(beneficiarios_normalizados)
+            
+            logger.info(f"  Cliente {sheet_name}: {df['beneficiario'].nunique()} beneficiarios originales -> "
+                       f"{df['beneficiario_norm'].nunique()} únicos normalizados")
+
+        # ==========================================
+        # NORMALIZACIÓN AVANZADA DE BANCOS
+        # ==========================================
+        if "banco" in df.columns:
+            # Crear columna normalizada
+            df["banco_norm_avanzado"] = df["banco"].apply(normalizar_nombre_entidad)
+            
+            # Mantener el primer nombre original encontrado
+            for idx, row in df.iterrows():
+                nombre_original = row["banco"]
+                nombre_normalizado = row["banco_norm_avanzado"]
+                
+                if nombre_normalizado not in bancos_normalizados and pd.notna(nombre_original):
+                    bancos_normalizados[nombre_normalizado] = nombre_original
+            
+            # Reemplazar con el nombre canónico
+            df["banco_canonico"] = df["banco_norm_avanzado"].map(bancos_normalizados)
+            
+            logger.info(f"  Cliente {sheet_name}: {df['banco'].nunique()} bancos originales -> "
+                       f"{df['banco_norm_avanzado'].nunique()} únicos normalizados")
+
+        # Normalizaciones útiles (mantener compatibilidad)
         df["estado_norm"] = df["estado"].map(_norm_upper) if "estado" in df.columns else None
         df["tipo_tx_norm"] = df["tipo_tx"].map(_norm_upper) if "tipo_tx" in df.columns else None
-        df["banco_norm"] = df["banco"].map(_norm_upper) if "banco" in df.columns else None
+        df["banco_norm"] = df.get("banco_canonico", df["banco"].map(_norm_upper) if "banco" in df.columns else None)
 
         # Fecha
         if "fecha" in df.columns:
@@ -230,9 +354,9 @@ def cargar_datos_clientes():
         df["ID DE TRANSACCION"] = df.get("tx_id", None)
         df["TIPO DE TRANSACCION"] = df.get("tipo_tx", None)
         df["TIPO DE IDENTIFICACION"] = df.get("tipo_id_benef", None)
-        df["BENEFICIARIO"] = df.get("beneficiario", None)
+        df["BENEFICIARIO"] = df.get("beneficiario_canonico", df.get("beneficiario", None))  # Usar canónico
         df["ID DE CLIENTE"] = df.get("id_cliente", None)
-        df["BANCO"] = df.get("banco", None)
+        df["BANCO"] = df.get("banco_canonico", df.get("banco", None))  # Usar canónico
         df["TIPO DE CUENTA"] = df.get("tipo_cuenta", None)
         df["NUMERO DE CUENTA"] = df.get("cuenta_numero", None)
         df["MONTO (COP)"] = df.get("monto_cop", 0)
@@ -255,9 +379,20 @@ def cargar_datos_clientes():
     df_completo = pd.concat(frames, ignore_index=True)
     lista_clientes = excel_file.sheet_names
     
+    # Estadísticas de normalización
+    beneficiarios_unicos_original = df_completo["beneficiario"].nunique() if "beneficiario" in df_completo.columns else 0
+    beneficiarios_unicos_normalizado = df_completo["beneficiario_canonico"].nunique() if "beneficiario_canonico" in df_completo.columns else 0
+    
+    bancos_unicos_original = df_completo["banco"].nunique() if "banco" in df_completo.columns else 0
+    bancos_unicos_normalizado = df_completo["banco_canonico"].nunique() if "banco_canonico" in df_completo.columns else 0
+    
     logger.info(f"✓ Cargados {len(lista_clientes)} clientes con {len(df_completo)} transacciones totales")
     logger.info(f"  - TX efectivas: {df_completo['tx_efectiva'].sum() if 'tx_efectiva' in df_completo.columns else 0}")
     logger.info(f"  - Rango fechas: {df_completo['fecha'].min()} a {df_completo['fecha'].max()}")
+    logger.info(f"  - Beneficiarios: {beneficiarios_unicos_original} originales -> {beneficiarios_unicos_normalizado} normalizados "
+               f"({beneficiarios_unicos_original - beneficiarios_unicos_normalizado} duplicados eliminados)")
+    logger.info(f"  - Bancos: {bancos_unicos_original} originales -> {bancos_unicos_normalizado} normalizados "
+               f"({bancos_unicos_original - bancos_unicos_normalizado} duplicados eliminados)")
     
     return df_completo, clientes_info, lista_clientes
 
@@ -281,8 +416,18 @@ def resumen_por_cliente(df_completo: pd.DataFrame, lista_clientes: list[str]) ->
         monto_total = float(df_eff["monto_cop"].sum()) if "monto_cop" in df_eff.columns else 0.0
         monto_prom = float(df_eff["monto_cop"].mean()) if len(df_eff) > 0 else 0.0
 
-        primera = dfc["fecha"].min() if "fecha" in dfc.columns else pd.NaT
-        ultima = dfc["fecha"].max() if "fecha" in dfc.columns else pd.NaT
+        # Calcular fechas, filtrando valores inválidos o muy antiguos (antes de 2000)
+        if "fecha" in dfc.columns:
+            fechas_validas = dfc["fecha"].dropna()
+            # Filtrar fechas razonables (desde año 2000 en adelante)
+            fecha_minima = pd.Timestamp('2000-01-01')
+            fechas_validas = fechas_validas[fechas_validas >= fecha_minima]
+            primera = fechas_validas.min() if len(fechas_validas) > 0 else pd.NaT
+            ultima = fechas_validas.max() if len(fechas_validas) > 0 else pd.NaT
+        else:
+            primera = pd.NaT
+            ultima = pd.NaT
+        
         dias_activo = int((ultima - primera).days) if pd.notna(primera) and pd.notna(ultima) else 0
 
         tasa_exito = (eff_tx / total_tx * 100) if total_tx > 0 else 0.0
@@ -540,13 +685,56 @@ logger.info("="*50)
 logger.info("Iniciando aplicación AdamoPay - Análisis Transaccional")
 logger.info("="*50)
 
-df_completo, clientes_info, lista_clientes = cargar_datos_clientes()
+# Widget de carga de archivo
+st.markdown("## 📂 Cargar Archivo de Datos")
+st.markdown(
+    """Por favor, sube tu archivo Excel con los datos transaccionales. 
+    El archivo debe contener múltiples hojas, donde cada hoja representa un cliente/originador."""
+)
 
+archivo_subido = st.file_uploader(
+    "Selecciona el archivo Excel",
+    type=["xlsx", "xls"],
+    help="Archivo Excel con transacciones (formato: Data_Clients&TX.xlsx)",
+    key="file_uploader_main"
+)
+
+df_completo = None
+clientes_info = None
+lista_clientes = None
+
+# Intentar cargar datos
+if archivo_subido is not None:
+    with st.spinner("📊 Cargando y procesando datos..."):
+        df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido)
+    
+    if df_completo is not None and not df_completo.empty:
+        st.success(f"✅ Datos cargados correctamente: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
+else:
+    # Intentar cargar desde archivo local (modo desarrollo)
+    with st.spinner("📊 Cargando datos desde archivo local..."):
+        df_completo, clientes_info, lista_clientes = cargar_datos_clientes(None)
+    
+    if df_completo is not None and not df_completo.empty:
+        st.info("ℹ️ Usando archivo local para desarrollo. En producción, sube tu archivo Excel.")
+
+# Validar que se cargaron los datos
 if df_completo is None or df_completo.empty:
-    st.warning("⚠️ No se pudieron cargar los datos. Verifica que el archivo 'Data_Clients&TX.xlsx' esté en la carpeta 'data/'.")
+    st.warning(
+        """⚠️ **No hay datos disponibles**
+        
+        Por favor, sube un archivo Excel con el siguiente formato:
+        - Cada hoja representa un cliente/originador
+        - Columnas requeridas: FECHA, BENEFICIARIO, BANCO, MONTO (COP), ESTADO, etc.
+        
+        Si estás desarrollando localmente, coloca el archivo 'Data_Clients&TX.xlsx' en la carpeta 'data/'.
+        """
+    )
     st.stop()
 
 resumen = resumen_por_cliente(df_completo, lista_clientes)
+
+st.markdown("---")
 
 # =========================
 # Capa 1: Métricas del negocio
@@ -568,6 +756,37 @@ tx_pn = int((df_relevantes["tipo_persona_benef"] == "Natural").sum()) if "tipo_p
 tx_pj = int((df_relevantes["tipo_persona_benef"] == "Jurídica").sum()) if "tipo_persona_benef" in df_relevantes.columns else 0
 monto_pn = float(df_relevantes.loc[df_relevantes["tipo_persona_benef"] == "Natural", "monto_cop"].sum()) if tx_pn else 0.0
 monto_pj = float(df_relevantes.loc[df_relevantes["tipo_persona_benef"] == "Jurídica", "monto_cop"].sum()) if tx_pj else 0.0
+
+# Beneficiarios únicos por tipo (usando columnas normalizadas)
+benef_unicos_pn = int(df_relevantes[df_relevantes["tipo_persona_benef"] == "Natural"]["BENEFICIARIO"].nunique()) if tx_pn and "BENEFICIARIO" in df_relevantes.columns else 0
+benef_unicos_pj = int(df_relevantes[df_relevantes["tipo_persona_benef"] == "Jurídica"]["BENEFICIARIO"].nunique()) if tx_pj and "BENEFICIARIO" in df_relevantes.columns else 0
+
+# Frecuencia de transacciones por beneficiario
+frecuencia_pn = (tx_pn / benef_unicos_pn) if benef_unicos_pn > 0 else 0
+frecuencia_pj = (tx_pj / benef_unicos_pj) if benef_unicos_pj > 0 else 0
+
+# Tendencia temporal (comparar primer vs segundo mes)
+if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+    df_relevantes_temp = df_relevantes.copy()
+    df_relevantes_temp["mes"] = df_relevantes_temp["fecha"].dt.to_period("M")
+    
+    # Agrupar por mes y tipo de persona
+    tendencia_pn = df_relevantes_temp[df_relevantes_temp["tipo_persona_benef"] == "Natural"].groupby("mes").size()
+    tendencia_pj = df_relevantes_temp[df_relevantes_temp["tipo_persona_benef"] == "Jurídica"].groupby("mes").size()
+    
+    # Calcular crecimiento (último mes vs primero)
+    if len(tendencia_pn) >= 2:
+        crecimiento_pn = ((tendencia_pn.iloc[-1] - tendencia_pn.iloc[0]) / tendencia_pn.iloc[0] * 100) if tendencia_pn.iloc[0] > 0 else 0
+    else:
+        crecimiento_pn = 0
+    
+    if len(tendencia_pj) >= 2:
+        crecimiento_pj = ((tendencia_pj.iloc[-1] - tendencia_pj.iloc[0]) / tendencia_pj.iloc[0] * 100) if tendencia_pj.iloc[0] > 0 else 0
+    else:
+        crecimiento_pj = 0
+else:
+    crecimiento_pn = 0
+    crecimiento_pj = 0
 
 # Comisiones totales generadas
 comisiones_totales = float(df_relevantes["comision_cop"].sum()) if "comision_cop" in df_relevantes.columns else 0.0
@@ -648,14 +867,14 @@ else:
     monto_mes_max_tx = 0.0
 
 # ============================================
-# FILA 1: MÉTRICAS CORE (4 columnas)
+# FILA 1: MÉTRICAS CORE (5 columnas)
 # ============================================
 st.markdown("### 📊 Indicadores Principales")
-row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
+row1_col1, row1_col2, row1_col3, row1_col4, row1_col5 = st.columns(5)
 
 with row1_col1:
     st.metric(
-        label="💰 Volumen Total de Transacciones realizadas",
+        label="💰 Volumen Total Transado",
         value=formato_moneda(monto_total_global),
         delta=f"{tx_relevantes_global:,} TX efectivas",
         help="Monto total de todas las transacciones efectivas (Pagadas/Validadas)"
@@ -663,7 +882,7 @@ with row1_col1:
 
 with row1_col2:
     st.metric(
-        label="💳 Cantidad de Transacciones Efectivas",
+        label="💳 Transacciones Efectivas",
         value=f"{tx_relevantes_global:,}",
         delta=f"{tasa_exito_global:.1f}% efectividad",
         help="Cantidad de transacciones exitosas (Estado: Pagado o Validado)"
@@ -671,24 +890,327 @@ with row1_col2:
 
 with row1_col3:
     st.metric(
-        label="📈 Monto de Transacción Promedio",
+        label="📈 Ticket Promedio",
         value=formato_moneda(promedio_tx_global),
-        delta=f"Rango operativo",
+        delta=f"Por transacción",
         help="Monto promedio por transacción efectiva - Indica el perfil transaccional"
     )
 
 with row1_col4:
+    # NUEVO: Mediana de montos
+    if "monto_cop" in df_relevantes.columns and len(df_relevantes) > 0:
+        mediana_global = float(df_relevantes["monto_cop"].median())
+        diferencia_mediana = ((promedio_tx_global - mediana_global) / mediana_global * 100) if mediana_global > 0 else 0
+        st.metric(
+            label="📊 Mediana de Montos",
+            value=formato_moneda(mediana_global),
+            delta=f"{diferencia_mediana:+.1f}% vs promedio",
+            help="Valor mediano de transacciones - Más robusto ante outliers que el promedio"
+        )
+    else:
+        st.metric(
+            label="📊 Mediana de Montos",
+            value="N/A",
+            help="No hay datos de montos disponibles"
+        )
+
+with row1_col5:
     st.metric(
-        label="📅 Mes Pico de Actividad",
-        value=mes_max_tx_str,
-        delta=f"{max_tx_mes:,} TX - {formato_moneda(monto_mes_max_tx)}",
-        help="Mes con mayor cantidad de transacciones efectivas y su volumen total"
+        label="💵 Comisiones Totales",
+        value=formato_moneda(comisiones_totales),
+        delta=f"Revenue generado",
+        help="Total de comisiones generadas por transacciones efectivas"
     )
 
-# FILA 2: Días pico y bajos (4 columnas)
-row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
+# ============================================
+# FILA 2: FRECUENCIA Y RITMO OPERATIVO (5 columnas)
+# ============================================
+st.markdown("### ⚡ Frecuencia y Ritmo Operativo")
+row2_col1, row2_col2, row2_col3, row2_col4, row2_col5 = st.columns(5)
 
 with row2_col1:
+    # Calcular días operativos (días con al menos 1 TX)
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        dias_unicos = df_relevantes['fecha'].dt.date.nunique()
+        dias_totales = (df_relevantes['fecha'].max() - df_relevantes['fecha'].min()).days + 1
+        densidad_operativa = (dias_unicos / dias_totales * 100) if dias_totales > 0 else 0
+        
+        st.metric(
+            label="📅 Días Operativos",
+            value=f"{dias_unicos}",
+            delta=f"{densidad_operativa:.1f}% densidad",
+            help=f"Días con actividad de {dias_totales} totales - Indica continuidad operativa"
+        )
+    else:
+        st.metric(
+            label="📅 Días Operativos",
+            value="N/A",
+            help="No hay datos de fechas disponibles"
+        )
+
+with row2_col2:
+    # Frecuencia transaccional diaria
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        dias_unicos = df_relevantes['fecha'].dt.date.nunique()
+        tx_por_dia_promedio = tx_relevantes_global / dias_unicos if dias_unicos > 0 else 0
+        
+        st.metric(
+            label="🔄 Frecuencia Diaria",
+            value=f"{tx_por_dia_promedio:.1f}",
+            delta=f"TX/día promedio",
+            help="Promedio de transacciones efectivas por día operativo"
+        )
+    else:
+        st.metric(
+            label="🔄 Frecuencia Diaria",
+            value="N/A",
+            help="No hay datos de fechas disponibles"
+        )
+
+with row2_col3:
+    # Velocidad del dinero (throughput)
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        dias_unicos = df_relevantes['fecha'].dt.date.nunique()
+        velocidad_dinero = monto_total_global / dias_unicos if dias_unicos > 0 else 0
+        
+        st.metric(
+            label="⚡ Velocidad Transaccional",
+            value=formato_moneda(velocidad_dinero).replace(" COP", ""),
+            delta=f"COP/día",
+            help="Volumen promedio procesado por día operativo"
+        )
+    else:
+        st.metric(
+            label="⚡ Velocidad Transaccional",
+            value="N/A",
+            help="No hay datos de fechas disponibles"
+        )
+
+with row2_col4:
+    # Volatilidad de TX diarias
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        tx_por_fecha = df_relevantes.groupby(df_relevantes['fecha'].dt.date).size()
+        volatilidad = tx_por_fecha.std() if len(tx_por_fecha) > 1 else 0
+        cv = (volatilidad / tx_por_fecha.mean() * 100) if tx_por_fecha.mean() > 0 else 0
+        
+        st.metric(
+            label="📊 Volatilidad Operativa",
+            value=f"±{volatilidad:.0f} TX",
+            delta=f"CV: {cv:.1f}%",
+            help="Desviación estándar de TX diarias - Mide estabilidad operativa"
+        )
+    else:
+        st.metric(
+            label="📊 Volatilidad Operativa",
+            value="N/A",
+            help="No hay suficientes datos para calcular volatilidad"
+        )
+
+with row2_col5:
+    # Costo por transacción (eficiencia)
+    if tx_relevantes_global > 0:
+        costo_por_tx = comisiones_totales / tx_relevantes_global
+        
+        st.metric(
+            label="💵 Costo por TX",
+            value=formato_moneda(costo_por_tx),
+            delta=f"Eficiencia operativa",
+            help="Comisión promedio por transacción efectiva"
+        )
+    else:
+        st.metric(
+            label="💵 Costo por TX",
+            value="N/A",
+            help="No hay transacciones efectivas"
+        )
+
+# ============================================
+# FILA 3: TENDENCIAS Y CONCENTRACIÓN (5 columnas)
+# ============================================
+st.markdown("### 📈 Tendencias y Concentración")
+row3_col1, row3_col2, row3_col3, row3_col4, row3_col5 = st.columns(5)
+
+with row3_col1:
+    # Tendencia mensual (primer vs último mes)
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        df_relevantes_temp = df_relevantes.copy()
+        df_relevantes_temp['mes'] = df_relevantes_temp['fecha'].dt.to_period('M')
+        tx_por_mes = df_relevantes_temp.groupby('mes').size()
+        
+        if len(tx_por_mes) >= 2:
+            tendencia_mensual = ((tx_por_mes.iloc[-1] - tx_por_mes.iloc[0]) / tx_por_mes.iloc[0] * 100) if tx_por_mes.iloc[0] > 0 else 0
+            tendencia_icon = "📈" if tendencia_mensual > 0 else "📉" if tendencia_mensual < 0 else "➡️"
+            tendencia_color = "normal" if tendencia_mensual >= 0 else "inverse"
+            
+            st.metric(
+                label="📈 Tendencia Mensual",
+                value=f"{tendencia_mensual:+.1f}%",
+                delta=f"{tendencia_icon} Primer vs Último",
+                delta_color=tendencia_color,
+                help="Variación porcentual de TX entre el primer y último mes del período"
+            )
+        else:
+            st.metric(
+                label="📈 Tendencia Mensual",
+                value="N/A",
+                delta="Requiere 2+ meses",
+                help="Se necesitan al menos 2 meses de datos"
+            )
+    else:
+        st.metric(
+            label="📈 Tendencia Mensual",
+            value="N/A",
+            help="No hay datos de fechas disponibles"
+        )
+
+with row3_col2:
+    # Momentum (aceleración/desaceleración)
+    if "fecha" in df_relevantes.columns and len(df_relevantes) > 0:
+        df_relevantes_temp = df_relevantes.copy()
+        df_relevantes_temp['mes'] = df_relevantes_temp['fecha'].dt.to_period('M')
+        tx_por_mes = df_relevantes_temp.groupby('mes').size()
+        
+        if len(tx_por_mes) >= 3:
+            # Calcular momentum (cambio en la tasa de cambio)
+            cambios = tx_por_mes.pct_change().fillna(0) * 100
+            momentum = cambios.iloc[-1] - cambios.iloc[-2] if len(cambios) >= 2 else 0
+            momentum_icon = "🚀" if momentum > 5 else "📈" if momentum > 0 else "📉" if momentum < -5 else "➡️"
+            
+            st.metric(
+                label="🚀 Momentum",
+                value=f"{momentum:+.1f}pp",
+                delta=f"{momentum_icon} Aceleración",
+                delta_color="normal" if momentum >= 0 else "inverse",
+                help="Aceleración/desaceleración del crecimiento (cambio en la tasa de variación)"
+            )
+        else:
+            st.metric(
+                label="🚀 Momentum",
+                value="N/A",
+                delta="Requiere 3+ meses",
+                help="Se necesitan al menos 3 meses de datos"
+            )
+    else:
+        st.metric(
+            label="🚀 Momentum",
+            value="N/A",
+            help="No hay datos de fechas disponibles"
+        )
+
+with row3_col3:
+    # Índice de concentración de beneficiarios (Top 10)
+    if "beneficiario" in df_relevantes.columns and len(df_relevantes) > 0:
+        df_benef_conc = df_relevantes.groupby('beneficiario')['monto_cop'].sum()
+        total_benef = len(df_benef_conc)
+        
+        # Calcular % del top 10
+        top10_monto = df_benef_conc.nlargest(min(10, len(df_benef_conc))).sum()
+        pct_top10 = (top10_monto / monto_total_global * 100) if monto_total_global > 0 else 0
+        
+        # Clasificar concentración
+        if pct_top10 > 80:
+            conc_nivel = "Muy Alta"
+            conc_icon = "🔴"
+            conc_color = "inverse"
+        elif pct_top10 > 60:
+            conc_nivel = "Alta"
+            conc_icon = "🟠"
+            conc_color = "inverse"
+        elif pct_top10 > 40:
+            conc_nivel = "Media"
+            conc_icon = "🟡"
+            conc_color = "off"
+        else:
+            conc_nivel = "Baja"
+            conc_icon = "🟢"
+            conc_color = "normal"
+        
+        st.metric(
+            label="🎯 Concentración Top 10",
+            value=f"{pct_top10:.1f}%",
+            delta=f"{conc_icon} {conc_nivel}",
+            delta_color=conc_color,
+            help=f"Los 10 beneficiarios principales concentran {pct_top10:.1f}% del volumen de {total_benef} beneficiarios totales"
+        )
+    else:
+        st.metric(
+            label="🎯 Concentración Top 10",
+            value="N/A",
+            help="No hay datos de beneficiarios disponibles"
+        )
+
+with row3_col4:
+    # Diversificación de entidades bancarias
+    if "banco_norm" in df_relevantes.columns and len(df_relevantes) > 0:
+        bancos_unicos = df_relevantes['banco_norm'].nunique()
+        
+        # Calcular distribución
+        df_bancos_dist = df_relevantes.groupby('banco_norm').size()
+        if len(df_bancos_dist) > 0:
+            banco_principal = df_bancos_dist.idxmax()
+            pct_banco_principal = (df_bancos_dist.max() / len(df_relevantes) * 100)
+            
+            st.metric(
+                label="🏦 Entidades Bancarias",
+                value=f"{bancos_unicos}",
+                delta=f"Principal: {pct_banco_principal:.1f}%",
+                help=f"Diversificación bancaria - Banco principal: {banco_principal} ({pct_banco_principal:.1f}%)"
+            )
+        else:
+            st.metric(
+                label="🏦 Entidades Bancarias",
+                value=f"{bancos_unicos}",
+                help="Número de entidades bancarias únicas"
+            )
+    else:
+        st.metric(
+            label="🏦 Entidades Bancarias",
+            value="N/A",
+            help="No hay datos de bancos disponibles"
+        )
+
+with row3_col5:
+    # Ratio de expansión de base (nuevos beneficiarios)
+    if "fecha" in df_relevantes.columns and "beneficiario" in df_relevantes.columns and len(df_relevantes) > 0:
+        df_relevantes_temp = df_relevantes.copy()
+        df_relevantes_temp = df_relevantes_temp.sort_values('fecha')
+        
+        # Dividir en primera y segunda mitad del período
+        mitad = len(df_relevantes_temp) // 2
+        if mitad > 0:
+            benef_primera_mitad = set(df_relevantes_temp.iloc[:mitad]['beneficiario'].unique())
+            benef_segunda_mitad = set(df_relevantes_temp.iloc[mitad:]['beneficiario'].unique())
+            
+            benef_nuevos = len(benef_segunda_mitad - benef_primera_mitad)
+            tasa_nuevos = (benef_nuevos / len(benef_segunda_mitad) * 100) if len(benef_segunda_mitad) > 0 else 0
+            
+            st.metric(
+                label="🆕 Expansión de Base",
+                value=f"{benef_nuevos}",
+                delta=f"{tasa_nuevos:.1f}% nuevos",
+                help="Beneficiarios nuevos en la segunda mitad del período - Indica expansión de base de clientes"
+            )
+        else:
+            st.metric(
+                label="🆕 Expansión de Base",
+                value="N/A",
+                delta="Datos insuficientes",
+                help="Se necesitan más transacciones para calcular expansión"
+            )
+    else:
+        st.metric(
+            label="🆕 Expansión de Base",
+            value="N/A",
+            help="No hay datos de beneficiarios o fechas disponibles"
+        )
+
+# ============================================
+# FILA 4: DÍAS PICO Y PATRONES
+# ============================================
+st.markdown("### 📅 Días Representativos")
+row4_col1, row4_col2, row4_col3, row4_col4 = st.columns(4)
+
+with row4_col1:
     st.metric(
         label="📅 Día con Más Transacciones",
         value=fecha_max_tx_str,
@@ -696,7 +1218,7 @@ with row2_col1:
         help="Fecha con el mayor número de transacciones registradas en el período"
     )
 
-with row2_col2:
+with row4_col2:
     st.metric(
         label="💵 Día con Mayor Volumen",
         value=fecha_max_monto_str,
@@ -704,7 +1226,7 @@ with row2_col2:
         help="Fecha con el mayor volumen transado en el período"
     )
 
-with row2_col3:
+with row4_col3:
     st.metric(
         label="📉 Día con Menos Transacciones",
         value=fecha_min_tx_str,
@@ -713,7 +1235,7 @@ with row2_col3:
         help="Fecha con el menor número de transacciones registradas en el período"
     )
 
-with row2_col4:
+with row4_col4:
     st.metric(
         label="📊 Día con Menor Volumen",
         value=fecha_min_monto_str,
@@ -731,19 +1253,23 @@ st.markdown("### 🎯 Segmentación y Desempeño")
 row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
 
 with row2_col1:
+    tendencia_icon_pn = "📈" if crecimiento_pn > 0 else "📉" if crecimiento_pn < 0 else "➡️"
     st.metric(
         label="👤 Beneficiarios Naturales",
-        value=f"{tx_pn:,} TX",
-        delta=f"{formato_moneda(monto_pn)} ({pct_pn:.1f}%)",
-        help="Transacciones y volumen hacia Personas Naturales"
+        value=f"{benef_unicos_pn:,} únicos",
+        delta=f"{tx_pn:,} TX • {frecuencia_pn:.1f} TX/benef {tendencia_icon_pn}{abs(crecimiento_pn):.1f}%",
+        delta_color="normal" if crecimiento_pn >= 0 else "inverse",
+        help=f"Beneficiarios únicos: {benef_unicos_pn:,}\nTransacciones totales: {tx_pn:,}\nFrecuencia promedio: {frecuencia_pn:.1f} TX por beneficiario\nTendencia: {crecimiento_pn:+.1f}% (primer vs último mes)\nVolumen: {formato_moneda(monto_pn)} ({pct_pn:.1f}%)"
     )
 
 with row2_col2:
+    tendencia_icon_pj = "📈" if crecimiento_pj > 0 else "📉" if crecimiento_pj < 0 else "➡️"
     st.metric(
         label="🏢 Beneficiarios Jurídicos",
-        value=f"{tx_pj:,} TX",
-        delta=f"{formato_moneda(monto_pj)} ({pct_pj:.1f}%)",
-        help="Transacciones y volumen hacia Personas Jurídicas"
+        value=f"{benef_unicos_pj:,} únicos",
+        delta=f"{tx_pj:,} TX • {frecuencia_pj:.1f} TX/benef {tendencia_icon_pj}{abs(crecimiento_pj):.1f}%",
+        delta_color="normal" if crecimiento_pj >= 0 else "inverse",
+        help=f"Beneficiarios únicos: {benef_unicos_pj:,}\nTransacciones totales: {tx_pj:,}\nFrecuencia promedio: {frecuencia_pj:.1f} TX por beneficiario\nTendencia: {crecimiento_pj:+.1f}% (primer vs último mes)\nVolumen: {formato_moneda(monto_pj)} ({pct_pj:.1f}%)"
     )
 
 with row2_col3:
@@ -1067,87 +1593,6 @@ st.markdown("---")
 # Dashboard detallado
 # =========================
 st.header("📊 Dashboard Detallado - Análisis Completo")
-
-# Botones exportación
-col1, col2, col3, col4 = st.columns(4)
-
-@st.cache_data
-def convertir_a_excel(df: pd.DataFrame) -> bytes:
-    try:
-        logger.info(f"Generando archivo Excel con {len(df)} registros...")
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="Datos_Completos", index=False)
-            resumen_df = pd.DataFrame(
-                {
-                    "Métrica": ["Total Transacciones", "TX Efectivas", "Volumen Efectivo", "Comisiones (Efectivas)"],
-                    "Valor": [
-                        len(df),
-                        int(df["tx_efectiva"].sum()) if "tx_efectiva" in df.columns else 0,
-                        float(df.loc[df["tx_efectiva"], "monto_cop"].sum()) if "monto_cop" in df.columns else 0.0,
-                        float(df.loc[df["tx_efectiva"], "comision_cop"].sum()) if "comision_cop" in df.columns else 0.0,
-                    ],
-                }
-            )
-            resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
-        logger.info("✓ Archivo Excel generado exitosamente")
-        return output.getvalue()
-    except Exception as e:
-        logger.error(f"Error generando Excel: {str(e)}")
-        st.error(f"⚠️ Error generando Excel: {str(e)}")
-        return b""
-
-@st.cache_data
-def convertir_a_csv(df: pd.DataFrame) -> bytes:
-    try:
-        logger.info(f"Generando archivo CSV con {len(df)} registros...")
-        csv_data = df.to_csv(index=False).encode("utf-8")
-        logger.info("✓ Archivo CSV generado exitosamente")
-        return csv_data
-    except Exception as e:
-        logger.error(f"Error generando CSV: {str(e)}")
-        st.error(f"⚠️ Error generando CSV: {str(e)}")
-        return b""
-
-with col1:
-    st.download_button(
-        label="📊 Excel",
-        data=convertir_a_excel(df_completo),
-        file_name=f"AdamoPay_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-
-with col2:
-    st.download_button(
-        label="📄 CSV",
-        data=convertir_a_csv(df_completo),
-        file_name=f"AdamoPay_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-
-with col3:
-    df_efectivas_export = df_completo[df_completo["tx_efectiva"]].copy()
-    st.download_button(
-        label="✅ TX Efectivas",
-        data=convertir_a_csv(df_efectivas_export),
-        file_name=f"AdamoPay_Efectivas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-
-with col4:
-    with st.popover("ℹ️ Info"):
-        st.markdown(
-            """
-            **Opciones de Exportación:**
-            - 📊 **Excel**: Datos completos + resumen
-            - 📄 **CSV**: Todos los registros
-            - ✅ **TX Efectivas**: Solo pagadas/validadas
-            """
-        )
-
 st.markdown("---")
 
 
@@ -1155,6 +1600,70 @@ st.markdown("---")
 # Tabs por cliente (detallado)
 # =========================
 st.markdown("### 👥 Información General de Clientes")
+
+# =========================
+# FILTRO DE FECHAS GLOBAL
+# =========================
+st.markdown("#### 📅 Filtro de Período")
+
+# Obtener rango de fechas disponible
+if "fecha" in df_completo.columns:
+    fechas_validas = df_completo["fecha"].dropna()
+    # Filtrar fechas razonables (desde año 2000)
+    fecha_minima_valida = pd.Timestamp('2000-01-01')
+    fechas_validas = fechas_validas[fechas_validas >= fecha_minima_valida]
+    
+    if len(fechas_validas) > 0:
+        fecha_min_global = fechas_validas.min().date()
+        fecha_max_global = fechas_validas.max().date()
+    else:
+        fecha_min_global = pd.Timestamp.now().date()
+        fecha_max_global = pd.Timestamp.now().date()
+else:
+    fecha_min_global = pd.Timestamp.now().date()
+    fecha_max_global = pd.Timestamp.now().date()
+
+col_fecha1, col_fecha2, col_fecha3 = st.columns([2, 2, 1])
+
+with col_fecha1:
+    fecha_inicio = st.date_input(
+        "📅 Fecha Inicio",
+        value=fecha_min_global,
+        min_value=fecha_min_global,
+        max_value=fecha_max_global,
+        help="Selecciona la fecha de inicio del período a analizar",
+        key="fecha_inicio_global"
+    )
+
+with col_fecha2:
+    fecha_fin = st.date_input(
+        "📅 Fecha Fin",
+        value=fecha_max_global,
+        min_value=fecha_min_global,
+        max_value=fecha_max_global,
+        help="Selecciona la fecha de fin del período a analizar",
+        key="fecha_fin_global"
+    )
+
+with col_fecha3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 Restablecer", use_container_width=True, help="Restablecer al rango completo de fechas"):
+        st.rerun()
+
+# Validar que fecha_inicio <= fecha_fin
+if fecha_inicio > fecha_fin:
+    st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin")
+    st.stop()
+
+# Convertir a Timestamp para comparación
+fecha_inicio_ts = pd.Timestamp(fecha_inicio)
+fecha_fin_ts = pd.Timestamp(fecha_fin)
+
+# Mostrar información del filtro
+dias_seleccionados = (fecha_fin_ts - fecha_inicio_ts).days + 1
+st.info(f"📊 Período seleccionado: **{dias_seleccionados} días** ({fecha_inicio.strftime('%d/%m/%Y')} - {fecha_fin.strftime('%d/%m/%Y')})")
+
+st.markdown("---")
 st.markdown("#### 🟦 Capa 1: Datos Transaccionales")
 st.caption("Métricas operativas y comportamiento del cliente")
 
@@ -1167,17 +1676,46 @@ for idx, cliente in enumerate(lista_clientes):
             st.info("Sin datos para este cliente.")
             continue
 
+        # APLICAR FILTRO DE FECHAS
         df_cliente = r["df"]
         df_cliente_efectivo = r["df_eff"]
+        
+        # Filtrar por rango de fechas seleccionado
+        if "fecha" in df_cliente.columns:
+            df_cliente = df_cliente[
+                (df_cliente['fecha'] >= fecha_inicio_ts) & 
+                (df_cliente['fecha'] <= fecha_fin_ts)
+            ].copy()
+            
+            df_cliente_efectivo = df_cliente_efectivo[
+                (df_cliente_efectivo['fecha'] >= fecha_inicio_ts) & 
+                (df_cliente_efectivo['fecha'] <= fecha_fin_ts)
+            ].copy()
+        
+        # Verificar si hay datos en el período
+        if len(df_cliente) == 0:
+            st.warning(f"⚠️ No hay transacciones para {cliente} en el período seleccionado")
+            continue
 
-        total_tx_cliente = r["total_tx"]
-        tx_efectivas_cliente = r["eff_tx"]
-        monto_total_cliente = r["monto_total"]
-        monto_promedio_cliente = r["monto_prom"]
-        tasa_exito_cliente = r["tasa_exito"]
-        primera_tx = r["primera"]
-        ultima_tx = r["ultima"]
-        dias_activo = r["dias_activo"]
+        # RECALCULAR MÉTRICAS con datos filtrados
+        total_tx_cliente = len(df_cliente)
+        tx_efectivas_cliente = len(df_cliente_efectivo)
+        monto_total_cliente = float(df_cliente_efectivo["monto_cop"].sum()) if "monto_cop" in df_cliente_efectivo.columns and len(df_cliente_efectivo) > 0 else 0.0
+        monto_promedio_cliente = float(df_cliente_efectivo["monto_cop"].mean()) if "monto_cop" in df_cliente_efectivo.columns and len(df_cliente_efectivo) > 0 else 0.0
+        tasa_exito_cliente = (tx_efectivas_cliente / total_tx_cliente * 100) if total_tx_cliente > 0 else 0.0
+        
+        # Fechas del período filtrado
+        if "fecha" in df_cliente.columns and len(df_cliente) > 0:
+            fechas_validas = df_cliente["fecha"].dropna()
+            fecha_minima = pd.Timestamp('2000-01-01')
+            fechas_validas = fechas_validas[fechas_validas >= fecha_minima]
+            primera_tx = fechas_validas.min() if len(fechas_validas) > 0 else pd.NaT
+            ultima_tx = fechas_validas.max() if len(fechas_validas) > 0 else pd.NaT
+        else:
+            primera_tx = pd.NaT
+            ultima_tx = pd.NaT
+        
+        dias_activo = int((ultima_tx - primera_tx).days) if pd.notna(primera_tx) and pd.notna(ultima_tx) else 0
 
         # Header cliente
         st.markdown(
@@ -1187,15 +1725,15 @@ for idx, cliente in enumerate(lista_clientes):
                         box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
                 <h2 style='margin: 0; font-size: 28px;'>🏢 {_safe(cliente)}</h2>
                 <p style='margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;'>
-                    Cliente Activo desde {primera_tx.strftime('%d/%m/%Y') if pd.notna(primera_tx) else 'N/A'}
+                    Período: {primera_tx.strftime('%d/%m/%Y') if pd.notna(primera_tx) else 'N/A'} - {ultima_tx.strftime('%d/%m/%Y') if pd.notna(ultima_tx) else 'N/A'}
                 </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Métricas - FILA 1: Principales (4 columnas)
-        row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
+        # Métricas - FILA 1: Transaccionales y Financieras (5 columnas)
+        row1_col1, row1_col2, row1_col3, row1_col4, row1_col5 = st.columns(5)
         
         with row1_col1:
             st.metric(
@@ -1228,9 +1766,21 @@ for idx, cliente in enumerate(lista_clientes):
                 delta=f"Tasa de éxito",
                 help="Porcentaje de transacciones exitosas"
             )
+        
+        with row1_col5:
+            comision_total = 0
+            if "comision_cop" in df_cliente_efectivo.columns and len(df_cliente_efectivo) > 0:
+                comision_total = float(df_cliente_efectivo["comision_cop"].sum())
+            
+            st.metric(
+                label="💵 Comisiones",
+                value=formato_moneda(comision_total),
+                delta=f"Total generado",
+                help="Comisiones totales generadas por el cliente"
+            )
 
-        # FILA 2: Temporales y financieras (4 columnas)
-        row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
+        # FILA 2: Temporales y Beneficiarios (5 columnas)
+        row2_col1, row2_col2, row2_col3, row2_col4, row2_col5 = st.columns(5)
         
         with row2_col1:
             st.metric(
@@ -1257,15 +1807,33 @@ for idx, cliente in enumerate(lista_clientes):
             )
         
         with row2_col4:
-            comision_total = 0
-            if "comision_cop" in df_cliente_efectivo.columns and len(df_cliente_efectivo) > 0:
-                comision_total = float(df_cliente_efectivo["comision_cop"].sum())
+            # Calcular beneficiarios únicos para personas naturales
+            beneficiarios_naturales = 0
+            if "beneficiario_canonico" in df_cliente_efectivo.columns and "tipo_persona_benef" in df_cliente_efectivo.columns:
+                beneficiarios_naturales = df_cliente_efectivo[
+                    df_cliente_efectivo["tipo_persona_benef"] == "Natural"
+                ]["beneficiario_canonico"].nunique()
             
             st.metric(
-                label="💵 Comisiones",
-                value=formato_moneda(comision_total),
-                delta=f"Total generado",
-                help="Comisiones totales generadas por el cliente"
+                label="👤 Beneficiarios Naturales",
+                value=f"{beneficiarios_naturales:,}",
+                delta=f"Únicos",
+                help="Número de beneficiarios únicos de tipo Persona Natural en el período"
+            )
+        
+        with row2_col5:
+            # Calcular beneficiarios únicos para personas jurídicas
+            beneficiarios_juridicas = 0
+            if "beneficiario_canonico" in df_cliente_efectivo.columns and "tipo_persona_benef" in df_cliente_efectivo.columns:
+                beneficiarios_juridicas = df_cliente_efectivo[
+                    df_cliente_efectivo["tipo_persona_benef"] == "Jurídica"
+                ]["beneficiario_canonico"].nunique()
+            
+            st.metric(
+                label="🏢 Beneficiarios Jurídicos",
+                value=f"{beneficiarios_juridicas:,}",
+                delta=f"Únicos",
+                help="Número de beneficiarios únicos de tipo Persona Jurídica en el período"
             )
 
         st.markdown("---")
@@ -1625,6 +2193,368 @@ for idx, cliente in enumerate(lista_clientes):
                     st.caption(f"   💳 {int(row['tx_id']):,} TX")
             else:
                 st.info("Sin datos de bancos")
+
+        st.markdown("---")
+
+        # ============================================
+        # 2B. ANÁLISIS DE INACTIVIDAD Y BAJA ACTIVIDAD
+        # ============================================
+        st.markdown("##### ⚠️ Beneficiarios Inactivos y Baja Actividad")
+        
+        if "beneficiario" in df_cliente_efectivo.columns and "fecha" in df_cliente_efectivo.columns and len(df_cliente_efectivo) > 0:
+            # Calcular última transacción por beneficiario
+            df_benef_actividad = df_cliente_efectivo.groupby('beneficiario').agg({
+                'fecha': ['min', 'max', 'count'],
+                'monto_cop': ['sum', 'mean']
+            })
+            
+            df_benef_actividad.columns = ['primera_tx', 'ultima_tx', 'cantidad_tx', 'monto_total', 'monto_promedio']
+            df_benef_actividad = df_benef_actividad.reset_index()
+            
+            # Calcular días desde última transacción
+            fecha_max_periodo = df_cliente_efectivo['fecha'].max()
+            df_benef_actividad['dias_sin_actividad'] = (fecha_max_periodo - df_benef_actividad['ultima_tx']).dt.days
+            
+            # Clasificar beneficiarios
+            umbral_inactividad = 90  # días
+            umbral_baja_actividad_tx = 3  # menos de 3 TX
+            umbral_bajo_monto = df_benef_actividad['monto_promedio'].quantile(0.25)  # 25% más bajo
+            
+            # Beneficiarios inactivos (sin actividad en 90+ días)
+            benef_inactivos = df_benef_actividad[df_benef_actividad['dias_sin_actividad'] >= umbral_inactividad].copy()
+            
+            # Beneficiarios con baja actividad (pocas TX)
+            benef_baja_actividad = df_benef_actividad[
+                (df_benef_actividad['cantidad_tx'] <= umbral_baja_actividad_tx) & 
+                (df_benef_actividad['dias_sin_actividad'] < umbral_inactividad)
+            ].copy()
+            
+            # Beneficiarios con bajos montos
+            benef_bajos_montos = df_benef_actividad[
+                (df_benef_actividad['monto_promedio'] <= umbral_bajo_monto) &
+                (df_benef_actividad['dias_sin_actividad'] < umbral_inactividad)
+            ].copy()
+            
+            # Métricas generales
+            col_inact1, col_inact2, col_inact3, col_inact4 = st.columns(4)
+            
+            with col_inact1:
+                total_beneficiarios = len(df_benef_actividad)
+                st.metric(
+                    label="👥 Total Beneficiarios",
+                    value=f"{total_beneficiarios:,}",
+                    delta="Base completa",
+                    help="Número total de beneficiarios únicos en el período"
+                )
+            
+            with col_inact2:
+                pct_inactivos = (len(benef_inactivos) / total_beneficiarios * 100) if total_beneficiarios > 0 else 0
+                st.metric(
+                    label="😴 Inactivos (90+ días)",
+                    value=f"{len(benef_inactivos):,}",
+                    delta=f"{pct_inactivos:.1f}% del total",
+                    delta_color="inverse",
+                    help=f"Beneficiarios sin transacciones en los últimos {umbral_inactividad} días"
+                )
+            
+            with col_inact3:
+                pct_baja_act = (len(benef_baja_actividad) / total_beneficiarios * 100) if total_beneficiarios > 0 else 0
+                st.metric(
+                    label="📉 Baja Actividad",
+                    value=f"{len(benef_baja_actividad):,}",
+                    delta=f"{pct_baja_act:.1f}% del total",
+                    delta_color="inverse",
+                    help=f"Beneficiarios con ≤{umbral_baja_actividad_tx} transacciones (activos)"
+                )
+            
+            with col_inact4:
+                pct_bajos_montos = (len(benef_bajos_montos) / total_beneficiarios * 100) if total_beneficiarios > 0 else 0
+                st.metric(
+                    label="💸 Bajos Montos",
+                    value=f"{len(benef_bajos_montos):,}",
+                    delta=f"{pct_bajos_montos:.1f}% del total",
+                    delta_color="off",
+                    help=f"Beneficiarios con monto promedio en el 25% inferior (≤{formato_moneda(umbral_bajo_monto)})"
+                )
+            
+            # Detalles con DATAFRAMES INTERACTIVOS
+            col_det1, col_det2, col_det3 = st.columns(3)
+            
+            with col_det1:
+                if len(benef_inactivos) > 0:
+                    with st.expander(f"📋 Ver Inactivos ({len(benef_inactivos)})", expanded=False):
+                        st.caption(f"**Listado completo de {len(benef_inactivos)} beneficiarios inactivos:**")
+                        
+                        # Preparar dataframe para visualización
+                        df_inactivos_display = benef_inactivos.sort_values('dias_sin_actividad', ascending=False).copy()
+                        
+                        # Formatear columnas para mejor visualización
+                        df_inactivos_display['Beneficiario'] = df_inactivos_display['beneficiario'].astype(str)
+                        df_inactivos_display['Última TX'] = df_inactivos_display['ultima_tx'].dt.strftime('%d/%m/%Y')
+                        df_inactivos_display['Primera TX'] = df_inactivos_display['primera_tx'].dt.strftime('%d/%m/%Y')
+                        df_inactivos_display['Días Inactivo'] = df_inactivos_display['dias_sin_actividad'].astype(int)
+                        df_inactivos_display['TX Históricas'] = df_inactivos_display['cantidad_tx'].astype(int)
+                        df_inactivos_display['Monto Total'] = df_inactivos_display['monto_total'].apply(lambda x: f"${x:,.0f}")
+                        df_inactivos_display['Monto Promedio'] = df_inactivos_display['monto_promedio'].apply(lambda x: f"${x:,.0f}")
+                        
+                        # Seleccionar y ordenar columnas
+                        df_display = df_inactivos_display[[
+                            'Beneficiario', 
+                            'Días Inactivo',
+                            'Última TX',
+                            'Primera TX',
+                            'TX Históricas',
+                            'Monto Total',
+                            'Monto Promedio'
+                        ]]
+                        
+                        # Mostrar dataframe interactivo con configuración mejorada
+                        st.dataframe(
+                            df_display,
+                            use_container_width=True,
+                            height=400,
+                            hide_index=True,
+                            column_config={
+                                "Beneficiario": st.column_config.TextColumn(
+                                    "Beneficiario",
+                                    help="Nombre del beneficiario",
+                                    width="large"
+                                ),
+                                "Días Inactivo": st.column_config.NumberColumn(
+                                    "Días Inactivo",
+                                    help="Días desde última transacción",
+                                    format="%d días"
+                                ),
+                                "Última TX": st.column_config.TextColumn(
+                                    "Última TX",
+                                    help="Fecha de última transacción"
+                                ),
+                                "Primera TX": st.column_config.TextColumn(
+                                    "Primera TX",
+                                    help="Fecha de primera transacción"
+                                ),
+                                "TX Históricas": st.column_config.NumberColumn(
+                                    "TX Históricas",
+                                    help="Total de transacciones realizadas",
+                                    format="%d TX"
+                                ),
+                                "Monto Total": st.column_config.TextColumn(
+                                    "Monto Total",
+                                    help="Volumen total transado (COP)"
+                                ),
+                                "Monto Promedio": st.column_config.TextColumn(
+                                    "Monto Promedio",
+                                    help="Monto promedio por transacción (COP)"
+                                )
+                            }
+                        )
+                        
+                        # Botón de descarga
+                        csv_inactivos = df_display.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="📥 Descargar CSV",
+                            data=csv_inactivos,
+                            file_name=f"{cliente}_beneficiarios_inactivos.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        # Estadísticas adicionales
+                        st.markdown("---")
+                        st.markdown("**📊 Estadísticas del grupo:**")
+                        col_stat1, col_stat2 = st.columns(2)
+                        with col_stat1:
+                            dias_promedio = df_inactivos_display['Días Inactivo'].mean()
+                            st.metric("Promedio días inactivo", f"{dias_promedio:.0f}")
+                        with col_stat2:
+                            tx_total = df_inactivos_display['TX Históricas'].sum()
+                            st.metric("TX históricas totales", f"{tx_total:,}")
+            
+            with col_det2:
+                if len(benef_baja_actividad) > 0:
+                    with st.expander(f"📋 Ver Baja Actividad ({len(benef_baja_actividad)})", expanded=False):
+                        st.caption(f"**Listado completo de {len(benef_baja_actividad)} beneficiarios con baja actividad:**")
+                        
+                        # Preparar dataframe
+                        df_baja_act_display = benef_baja_actividad.sort_values('cantidad_tx').copy()
+                        
+                        df_baja_act_display['Beneficiario'] = df_baja_act_display['beneficiario'].astype(str)
+                        df_baja_act_display['TX Realizadas'] = df_baja_act_display['cantidad_tx'].astype(int)
+                        df_baja_act_display['Última TX'] = df_baja_act_display['ultima_tx'].dt.strftime('%d/%m/%Y')
+                        df_baja_act_display['Primera TX'] = df_baja_act_display['primera_tx'].dt.strftime('%d/%m/%Y')
+                        df_baja_act_display['Monto Total'] = df_baja_act_display['monto_total'].apply(lambda x: f"${x:,.0f}")
+                        df_baja_act_display['Monto Promedio'] = df_baja_act_display['monto_promedio'].apply(lambda x: f"${x:,.0f}")
+                        df_baja_act_display['Días sin TX'] = df_baja_act_display['dias_sin_actividad'].astype(int)
+                        
+                        df_display = df_baja_act_display[[
+                            'Beneficiario',
+                            'TX Realizadas',
+                            'Última TX',
+                            'Primera TX',
+                            'Días sin TX',
+                            'Monto Total',
+                            'Monto Promedio'
+                        ]]
+                        
+                        st.dataframe(
+                            df_display,
+                            use_container_width=True,
+                            height=400,
+                            hide_index=True,
+                            column_config={
+                                "Beneficiario": st.column_config.TextColumn(
+                                    "Beneficiario",
+                                    width="large"
+                                ),
+                                "TX Realizadas": st.column_config.NumberColumn(
+                                    "TX Realizadas",
+                                    format="%d TX"
+                                ),
+                                "Días sin TX": st.column_config.NumberColumn(
+                                    "Días sin TX",
+                                    format="%d días"
+                                )
+                            }
+                        )
+                        
+                        csv_baja_act = df_display.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="📥 Descargar CSV",
+                            data=csv_baja_act,
+                            file_name=f"{cliente}_beneficiarios_baja_actividad.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("**📊 Estadísticas del grupo:**")
+                        col_stat1, col_stat2 = st.columns(2)
+                        with col_stat1:
+                            tx_promedio = df_baja_act_display['TX Realizadas'].mean()
+                            st.metric("Promedio TX", f"{tx_promedio:.1f}")
+                        with col_stat2:
+                            monto_total_grupo = benef_baja_actividad['monto_total'].sum()
+                            st.metric("Volumen total", formato_moneda(monto_total_grupo))
+            
+            with col_det3:
+                if len(benef_bajos_montos) > 0:
+                    with st.expander(f"📋 Ver Bajos Montos ({len(benef_bajos_montos)})", expanded=False):
+                        st.caption(f"**Listado completo de {len(benef_bajos_montos)} beneficiarios con bajos montos:**")
+                        
+                        # Preparar dataframe
+                        df_bajos_display = benef_bajos_montos.sort_values('monto_promedio').copy()
+                        
+                        df_bajos_display['Beneficiario'] = df_bajos_display['beneficiario'].astype(str)
+                        df_bajos_display['Monto Promedio'] = df_bajos_display['monto_promedio'].apply(lambda x: f"${x:,.0f}")
+                        df_bajos_display['Monto Total'] = df_bajos_display['monto_total'].apply(lambda x: f"${x:,.0f}")
+                        df_bajos_display['TX Realizadas'] = df_bajos_display['cantidad_tx'].astype(int)
+                        df_bajos_display['Última TX'] = df_bajos_display['ultima_tx'].dt.strftime('%d/%m/%Y')
+                        df_bajos_display['Primera TX'] = df_bajos_display['primera_tx'].dt.strftime('%d/%m/%Y')
+                        df_bajos_display['Días sin TX'] = df_bajos_display['dias_sin_actividad'].astype(int)
+                        
+                        df_display = df_bajos_display[[
+                            'Beneficiario',
+                            'Monto Promedio',
+                            'Monto Total',
+                            'TX Realizadas',
+                            'Última TX',
+                            'Primera TX',
+                            'Días sin TX'
+                        ]]
+                        
+                        st.dataframe(
+                            df_display,
+                            use_container_width=True,
+                            height=400,
+                            hide_index=True,
+                            column_config={
+                                "Beneficiario": st.column_config.TextColumn(
+                                    "Beneficiario",
+                                    width="large"
+                                ),
+                                "TX Realizadas": st.column_config.NumberColumn(
+                                    "TX Realizadas",
+                                    format="%d TX"
+                                ),
+                                "Días sin TX": st.column_config.NumberColumn(
+                                    "Días sin TX",
+                                    format="%d días"
+                                )
+                            }
+                        )
+                        
+                        csv_bajos = df_display.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="📥 Descargar CSV",
+                            data=csv_bajos,
+                            file_name=f"{cliente}_beneficiarios_bajos_montos.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("**📊 Estadísticas del grupo:**")
+                        st.info(f"💰 Umbral de bajo monto: {formato_moneda(umbral_bajo_monto)} (percentil 25)")
+                        col_stat1, col_stat2 = st.columns(2)
+                        with col_stat1:
+                            monto_min = benef_bajos_montos['monto_promedio'].min()
+                            st.metric("Monto más bajo", formato_moneda(monto_min))
+                        with col_stat2:
+                            tx_total_grupo = benef_bajos_montos['cantidad_tx'].sum()
+                            st.metric("TX totales", f"{tx_total_grupo:,}")
+            
+            # Gráfico de distribución de actividad
+            st.markdown("**📊 Distribución de Actividad de Beneficiarios**")
+            
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            
+            fig_actividad = make_subplots(
+                rows=1, cols=2,
+                subplot_titles=('Distribución por Cantidad de TX', 'Distribución por Días sin Actividad'),
+                specs=[[{"type": "histogram"}, {"type": "histogram"}]]
+            )
+            
+            # Histograma de cantidad de TX
+            fig_actividad.add_trace(
+                go.Histogram(
+                    x=df_benef_actividad['cantidad_tx'],
+                    name='TX por Beneficiario',
+                    marker_color='#4a90e2',
+                    opacity=0.7,
+                    nbinsx=20
+                ),
+                row=1, col=1
+            )
+            
+            # Histograma de días sin actividad
+            fig_actividad.add_trace(
+                go.Histogram(
+                    x=df_benef_actividad['dias_sin_actividad'],
+                    name='Días sin Actividad',
+                    marker_color='#e74c3c',
+                    opacity=0.7,
+                    nbinsx=20
+                ),
+                row=1, col=2
+            )
+            
+            fig_actividad.update_xaxes(title_text="Cantidad de TX", row=1, col=1)
+            fig_actividad.update_xaxes(title_text="Días sin Actividad", row=1, col=2)
+            fig_actividad.update_yaxes(title_text="Cantidad de Beneficiarios", row=1, col=1)
+            fig_actividad.update_yaxes(title_text="Cantidad de Beneficiarios", row=1, col=2)
+            
+            fig_actividad.update_layout(
+                height=400,
+                showlegend=False,
+                plot_bgcolor='rgba(248, 249, 250, 0.5)',
+                paper_bgcolor='white',
+                margin=dict(l=50, r=50, t=80, b=50)
+            )
+            
+            st.plotly_chart(fig_actividad, use_container_width=True)
+        else:
+            st.info("No hay suficientes datos para analizar inactividad de beneficiarios")
 
         st.markdown("---")
 

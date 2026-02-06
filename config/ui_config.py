@@ -7,49 +7,49 @@ Edita estos valores para cambiar tamaños de fuente y estilos en toda la app
 # CONFIGURACIÓN DE FUENTES
 # ====================================
 
-# Títulos principales
+# Títulos principales - Optimizados para navegadores
 FUENTES = {
-    "h1": 52,           # Título principal de la app
-    "h2": 44,           # Títulos de sección
-    "h3": 36,           # Subtítulos
-    "h4": 28,           # Títulos menores
-    "h5": 24,           # Títulos muy pequeños
+    "h1": 32,           # Título principal de la app (antes: 52)
+    "h2": 26,           # Títulos de sección (antes: 44)
+    "h3": 22,           # Subtítulos (antes: 36)
+    "h4": 19,           # Títulos menores (antes: 28)
+    "h5": 17,           # Títulos muy pequeños (antes: 24)
 }
 
-# Texto general
+# Texto general - Tamaños estándar web
 TEXTO = {
-    "base": 20,         # Texto normal en toda la app
-    "caption": 17,      # Textos pequeños (captions)
-    "parrafo": 20,      # Párrafos
+    "base": 14,         # Texto normal en toda la app (antes: 20)
+    "caption": 12,      # Textos pequeños (captions) (antes: 17)
+    "parrafo": 14,      # Párrafos (antes: 20)
 }
 
-# Métricas (las cards con números grandes)
+# Métricas (las cards con números grandes) - Reducidas proporcionalmente
 METRICAS = {
-    "valor": 36,        # El número grande de la métrica
-    "label": 20,        # El título de la métrica
-    "delta": 18,        # El texto pequeño debajo (cambio/delta)
+    "valor": 17,        # El número grande de la métrica (antes: 18) 
+    "label": 13,        # El título de la métrica (antes: 20)
+    "delta": 12,        # El texto pequeño debajo (cambio/delta) (antes: 18)
 }
 
-# Tarjetas de resumen por cliente (sección "👥 Resumen por Cliente")
+# Tarjetas de resumen por cliente (sección "👥 Resumen por Cliente") - Optimizadas para 4 columnas
 TARJETAS_CLIENTE = {
-    "header": 18,       # Título de la tarjeta (nombre del cliente)
-    "valor_metrica": 28,    # Números dentro de las tarjetas
-    "label_metrica": 14,    # Labels dentro de las tarjetas
-    "delta": 13,        # Deltas dentro de las tarjetas
-    "texto": 14,        # Texto general en tarjetas
-    "expander_header": 14,  # Header del expander
-    "expander_content": 13, # Contenido del expander
-    "padding": "12px 16px", # Espaciado del header
-    "columnas": 3,      # Número de tarjetas por fila (2, 3 o 4)
+    "header": 16,       # Título de la tarjeta (nombre del cliente) - Reducido de 18
+    "valor_metrica": 18,    # Números dentro de las tarjetas - Reducido de 20
+    "label_metrica": 11,    # Labels dentro de las tarjetas - Reducido de 12
+    "delta": 10,        # Deltas dentro de las tarjetas - Reducido de 11
+    "texto": 12,        # Texto general en tarjetas - Reducido de 13
+    "expander_header": 13,  # Header del expander - Reducido de 14
+    "expander_content": 12, # Contenido del expander - Reducido de 13
+    "padding": "10px 14px", # Espaciado del header - Reducido de 12px 16px
+    "columnas": 4,      # Número de tarjetas por fila - Cambiado de 3 a 4
 }
 
-# Componentes interactivos
+# Componentes interactivos - Reducidos a tamaños estándar
 COMPONENTES = {
-    "boton": 19,        # Botones
-    "tab": 20,          # Pestañas/tabs
-    "input": 19,        # Inputs y selects
-    "dataframe": 18,    # Tablas de datos
-    "expander": 20,     # Expanders generales
+    "boton": 14,        # Botones (antes: 19)
+    "tab": 15,          # Pestañas/tabs (antes: 20)
+    "input": 14,        # Inputs y selects (antes: 19)
+    "dataframe": 13,    # Tablas de datos (antes: 18)
+    "expander": 15,     # Expanders generales (antes: 20)
 }
 
 # ====================================

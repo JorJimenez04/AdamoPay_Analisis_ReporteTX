@@ -1,3 +1,7 @@
+# ===================================
+# CONFIGURACIÓN PARA STREAMLIT CLOUD
+# ===================================
+
 [theme]
 # Tema corporativo de AdamoPay
 primaryColor = "#4a90e2"
@@ -9,15 +13,15 @@ font = "sans serif"
 [server]
 # Configuración del servidor
 headless = true
-port = 8501
+# port se asigna automáticamente en Streamlit Cloud
 enableCORS = false
 enableXsrfProtection = true
+maxUploadSize = 200
+# fileWatcherType = "none"  # Desactivar en producción para mejor rendimiento
 
 [browser]
 # Configuración del navegador
 gatherUsageStats = false
-serverAddress = "localhost"
-serverPort = 8501
 
 [runner]
 # Configuración de ejecución

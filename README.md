@@ -4,6 +4,7 @@ Sistema avanzado de análisis de riesgo transaccional con caracterización GAFI,
 
 ## 🚀 Características Principales
 
+- **File Uploader Integrado**: Carga dinámica de archivos Excel sin hardcoding
 - **Caracterización GAFI**: Análisis de perfil de riesgo basado en estándares GAFI
 - **Scoring Multicapa**: Sistema de puntuación ponderado (GAFI 40% + UIAF 35% + Operativo 25%)
 - **Alertas Automáticas**: Detección de 6 tipos de alertas con 4 niveles de prioridad
@@ -11,36 +12,58 @@ Sistema avanzado de análisis de riesgo transaccional con caracterización GAFI,
 - **Dashboard Interactivo**: Visualización profesional con Streamlit y gráficas corporativas
 - **Análisis Temporal**: Evolución de transacciones, días pico y patrones semanales
 - **Concentración de Operaciones**: Top beneficiarios (PN/PJ) y bancos receptores
+- **Análisis de Inactividad**: Beneficiarios inactivos y de baja actividad con métricas avanzadas
 - **Reportes Ejecutivos**: Generación automática de reportes individuales y de cartera
+- **Deployment-Ready**: Configurado para Streamlit Community Cloud (gratuito)
 
 ## 📁 Estructura del Proyecto
 
 ```
 AdamoPay_Analisis_ReporteTX/
-├── app.py                      # 🎯 Aplicación Streamlit (Principal - 2000+ líneas)
-├── config/
-│   ├── settings.py             # Configuración general del sistema
-│   └── ui_config.py            # Configuración de UI (151 líneas)
-├── data/
-│   └── Data_Clients&TX.xlsx    # Datos de clientes y transacciones
-├── src/
-│   ├── characterization/       # 🧭 Módulo de Caracterización GAFI
-│   │   ├── base_characterization.py
-│   │   ├── gafi_profile.py
-│   │   ├── behavior_metrics.py
-│   │   ├── risk_flags.py
-│   │   └── contracts.py
-│   └── risk_analysis/          # 🎯 Módulo de Análisis de Riesgo Integral
-│       ├── risk_engine.py          # Motor principal
-│       ├── risk_scoring.py         # Sistema de scoring
-│       ├── risk_alerts.py          # Generación de alertas
-│       ├── risk_reports.py         # Reportes ejecutivos
-│       ├── risk_contracts.py       # Contratos TypedDict
-│       └── test_risk_module.py     # Tests del módulo
-├── assets/                     # Recursos visuales
-│   ├── LogoAdamoServices.png   # Logo AdamoServices
-│   └── LogoAdamoPay.jpeg       # Logo AdamoPay
-└── requirements.txt            # Dependencias Python
+├── 📄 app.py                          # Aplicación Streamlit principal (2975+ líneas)
+│                                      # ✅ File uploader implementado
+│                                      # ✅ Carga flexible: archivo subido o local
+│
+├── 📂 .streamlit/                     # Configuración de Streamlit
+│   ├── config.toml                    # Configuración optimizada para producción
+│   └── secrets.toml.example           # Template para secretos (passwords, API keys)
+│
+├── 📂 config/                         # Configuración del sistema
+│   ├── settings.py                    # Configuración general (umbrales, estados)
+│   └── ui_config.py                   # Configuración UI (fuentes, colores, layouts)
+│
+├── 📂 src/                            # Código fuente
+│   ├── characterization/              # 🧭 Módulo de Caracterización GAFI
+│   │   ├── base_characterization.py  # Orquestación principal
+│   │   ├── gafi_profile.py           # Clasificación de perfiles de riesgo
+│   │   ├── behavior_metrics.py       # Métricas comportamentales
+│   │   ├── risk_flags.py             # 15+ banderas de riesgo automáticas
+│   │   └── contracts.py              # Contratos TypedDict
+│   │
+│   └── risk_analysis/                 # 🎯 Módulo de Análisis de Riesgo
+│       ├── risk_engine.py            # Motor principal (inherente vs residual)
+│       ├── risk_scoring.py           # Sistema de scoring ponderado
+│       ├── risk_alerts.py            # Generación de alertas (6 tipos, 4 prioridades)
+│       ├── risk_reports.py           # Reportes ejecutivos
+│       ├── risk_contracts.py         # Schemas TypedDict
+│       └── test_risk_module.py       # Tests del módulo
+│
+├── 📂 data/                           # Datos (opcional en producción)
+│   └── Data_Clients&TX.xlsx          # Archivo de ejemplo para desarrollo local
+│
+├── 📂 assets/                         # Recursos visuales
+│   ├── LogoAdamoServices.png         # Logo AdamoServices
+│   └── LogoAdamoPay.jpeg             # Logo AdamoPay
+│
+├── 📄 requirements.txt                # ✅ Dependencias Python (producción)
+├── 📄 packages.txt                    # Dependencias del sistema (Linux)
+├── 📄 .gitignore                      # ✅ Archivos excluidos de git
+│
+├── 📄 README.md                       # Este archivo
+├── 📄 DEPLOYMENT_CLOUD.md            # 🆕 Guía completa de deployment (Streamlit Cloud)
+├── 📄 DEPLOYMENT_CHECKLIST.md        # 🆕 Checklist interactivo de deployment
+├── 📄 DEPLOYMENT_GUIDE.md            # Guía técnica de deployment
+└── 📄 setup_git.ps1                  # 🆕 Script automatizado para Git setup
 ```
 
 ## 📦 Instalación
@@ -67,27 +90,66 @@ AdamoPay_Analisis_ReporteTX/
 
 ## 🎨 Dependencias Principales
 
+```python
+# Web Framework
+streamlit>=1.31.0
+
+# Análisis de datos
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Visualización
+plotly>=5.18.0
+
+# Procesamiento de Excel
+openpyxl>=3.1.2
+
+# Utilidades
+python-dateutil>=2.8.2
+
+# Generación de reportes (opcional)
+reportlab>=4.0.0
+fpdf2>=2.7.0
 ```
-streamlit==1.52.2
-pandas==2.3.3
-numpy==2.4.0
-plotly==6.5.0
-openpyxl==3.1.5
-```
+
+**Nota:** Las versiones usan `>=` para compatibilidad con Streamlit Cloud
 
 ## 🚀 Uso
 
-### Ejecutar aplicación Streamlit:
-```bash
-streamlit run app.py
-```
+### Desarrollo Local:
 
-La aplicación se abrirá en `http://localhost:8501`
+1. **Ejecutar aplicación Streamlit**:
+   ```bash
+   streamlit run app.py
+   ```
+   La aplicación se abrirá en `http://localhost:8501`
 
-### Ejecutar tests del módulo de riesgo:
-```bash
-python src/risk_analysis/test_risk_module.py
-```
+2. **Subir archivo de datos**: 
+   - Usa el widget de carga en la interfaz
+   - O coloca `Data_Clients&TX.xlsx` en la carpeta `data/` (modo desarrollo)
+
+3. **Ejecutar tests del módulo de riesgo**:
+   ```bash
+   python src/risk_analysis/test_risk_module.py
+   ```
+
+### 🌐 Deployment en Producción:
+
+Para desplegar la aplicación en **Streamlit Community Cloud (GRATIS)**:
+
+📖 **Ver guía completa**: [DEPLOYMENT_CLOUD.md](DEPLOYMENT_CLOUD.md)
+
+**Resumen rápido**:
+1. Sube el código a GitHub
+2. Conecta tu repositorio en [share.streamlit.io](https://share.streamlit.io)
+3. Deploy automático en 5-10 minutos
+4. **Características gratuitas**: 1GB RAM, SSL/HTTPS, ~10-50 usuarios concurrentes
+
+**Archivos de configuración incluidos**:
+- ✅ `requirements.txt` - Dependencias
+- ✅ `.streamlit/config.toml` - Configuración
+- ✅ `.gitignore` - Exclusiones git
+- ✅ `.streamlit/secrets.toml.example` - Template de secretos
 
 ## 📊 Módulos Principales
 
@@ -182,18 +244,24 @@ TIPOS_PERSONA_JURIDICA = ["Jurídica", "Empresa", ...]
 ### `config/ui_config.py`
 ```python
 FUENTES = {
-    'h1': 52, 'h2': 44, 'h3': 36, 'h4': 28, 'h5': 24
+    'h1': 32,  # Reducido de 52 para mejor visualización
+    'h2': 26,  # Reducido de 44
+    'h3': 22,  # Reducido de 36
+    'base': 14  # Reducido de 20
 }
 
 METRICAS = {
-    'valor': 36, 'label': 20, 'delta': 18
+    'valor': 24,    # Reducido de 36
+    'label': 13,    # Reducido de 20
+    'delta': 14     # Reducido de 18
 }
 
-TEMAS = {
-    'compacto': {...},
-    'estandar': {...},
-    'grande': {...},
-    'presentacion': {...}
+TARJETAS_CLIENTE = {
+    'columnas': 4,           # Cambiado de 3 a 4
+    'header': 16,            # Reducido de 18
+    'valor_metrica': 18,     # Reducido de 20
+    'label_metrica': 11,     # Reducido de 12
+    'padding': '10px 14px'   # Reducido de '12px 16px'
 }
 ```
 
@@ -230,25 +298,35 @@ TEMAS = {
 
 ```
 1. Carga de Datos
-   ├── Lectura de Excel (Data_Clients&TX.xlsx)
+   ├── 🆕 Widget de file uploader (producción)
+   ├── 🔄 Fallback a archivo local (desarrollo)
    ├── Validación de columnas requeridas
-   └── Normalización de datos
+   ├── Normalización de beneficiarios (reduce duplicados)
+   ├── Normalización de bancos (estandarización)
+   └── Filtrado de fechas (>= 2000-01-01)
 
-2. Caracterización GAFI
+2. Procesamiento Global
+   ├── Filtro de rango de fechas (inicio/fin)
+   ├── Cálculo de métricas de negocio (15+ indicadores)
+   ├── Segmentación por tipo de persona (Natural/Jurídica)
+   └── Pre-cálculo de resúmenes por cliente (caché)
+
+3. Caracterización GAFI
    ├── Perfil de comportamiento
    ├── Métricas de riesgo
    └── Banderas automáticas
 
-3. Análisis de Riesgo Integral
+4. Análisis de Riesgo Integral
    ├── Scoring multicapa (GAFI + UIAF + Operativo)
-   ├── Generación de alertas
+   ├── Generación de alertas (6 tipos, 4 prioridades)
    ├── Evaluación de controles
    └── Determinación de nivel de riesgo
 
-4. Visualización y Reportes
+5. Visualización y Reportes
    ├── Dashboard interactivo
-   ├── Gráficas corporativas
-   ├── Tablas detalladas
+   ├── Gráficas corporativas (Plotly)
+   ├── Tablas detalladas con dataframes
+   ├── 🆕 Análisis de beneficiarios inactivos
    └── Recomendaciones accionables
 ```
 
@@ -272,15 +350,29 @@ Fondos:         #f8f9fa, rgba(248, 249, 250, 0.5)
 
 ## 🔒 Seguridad y Cumplimiento
 
-- ✅ Validación de datos de entrada
-- ✅ Logging de operaciones críticas
-- ✅ Manejo de errores robusto
-- ✅ Cumplimiento GAFI/UIAF
-- ✅ Auditoría de alertas generadas
+- ✅ **File uploader seguro**: Archivos procesados en memoria (no se guardan en disco)
+- ✅ **Validación de datos**: Entrada robusta con manejo de errores
+- ✅ **Logging completo**: Operaciones críticas registradas
+- ✅ **Escape HTML**: Prevención de XSS en visualizaciones
+- ✅ **Normalización avanzada**: Beneficiarios y bancos (reduce duplicados por variaciones)
+- ✅ **Filtrado de fechas**: Validación de rangos (>= 2000-01-01)
+- ✅ **Cumplimiento GAFI/UIAF**: Análisis según estándares internacionales
+- ✅ **Auditoría**: Alertas y riesgos rastreables
+- 🔐 **Autenticación opcional**: Protección con password (configuración secrets.toml)
 
-## 📝 Versión
+## 📝 Versión e Historial
 
-**v2.0.0** - Febrero 2026
+**v2.1.0** - Febrero 2026 🆕
+- ✅ **File uploader implementado**: Carga dinámica sin hardcoding
+- ✅ **Deployment ready**: Configuración completa para Streamlit Cloud
+- ✅ **Normalización avanzada**: Beneficiarios y bancos con reducción de duplicados
+- ✅ **Filtro de fechas global**: Rango de fechas aplicado a todos los clientes
+- ✅ **Análisis de inactividad**: Beneficiarios inactivos (90+ días), baja actividad (≤3 TX), montos bajos
+- ✅ **Métricas ampliadas**: 15+ indicadores (mediana, volatilidad, frecuencia, tendencias, concentración)
+- ✅ **UI optimizada**: Fuentes reducidas 20-30%, layout 4 columnas
+- ✅ **Documentación completa**: Guías de deployment, checklist, scripts automatizados
+
+**v2.0.0** - Enero 2026
 - Dashboard mejorado con visualización profesional
 - Gráficas corporativas con Plotly
 - Sistema de análisis temporal completo
