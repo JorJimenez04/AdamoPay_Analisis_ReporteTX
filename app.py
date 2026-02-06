@@ -670,6 +670,118 @@ def cargar_datos_clientes(archivo_subido=None, usar_datos_ejemplo=False):
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False, max_entries=10)
+def calcular_metricas_globales_cached(df: pd.DataFrame, estados_efectivos: tuple) -> dict:
+    """
+    Calcula métricas globales del negocio con cache para optimizar performance.
+    Cálculo directo sin dependencias externas (Streamlit Cloud ready).
+    
+    Args:
+        df: DataFrame completo con todas las transacciones
+        estados_efectivos: Tupla de estados considerados efectivos (hasheable)
+        
+    Returns:
+        Dict con todas las métricas globales calculadas
+    """
+    logger.info(f"Calculando métricas globales para {len(df):,} transacciones...")
+    
+    # Filtrar transacciones efectivas
+    if "tx_efectiva" in df.columns:
+        df_efectivas = df[df["tx_efectiva"]].copy()
+    else:
+        df["estado_norm"] = df["estado"].fillna("").str.upper().str.strip()
+        df_efectivas = df[df["estado_norm"].isin(estados_efectivos)].copy()
+    
+    # Métricas básicas
+    total_transacciones = len(df)
+    tx_efectivas = len(df_efectivas)
+    efectividad = (tx_efectivas / total_transacciones * 100) if total_transacciones > 0 else 0.0
+    
+    # Métricas financieras
+    monto_total = float(df_efectivas["monto_cop"].sum()) if "monto_cop" in df_efectivas.columns else 0.0
+    monto_promedio = float(df_efectivas["monto_cop"].mean()) if len(df_efectivas) > 0 else 0.0
+    monto_mediana = float(df_efectivas["monto_cop"].median()) if len(df_efectivas) > 0 else 0.0
+    comisiones_totales = float(df_efectivas["comision_cop"].sum()) if "comision_cop" in df_efectivas.columns else 0.0
+    
+    # Métricas por tipo de persona
+    tx_pn = int((df_efectivas["tipo_persona_benef"] == "Natural").sum()) if "tipo_persona_benef" in df_efectivas.columns else 0
+    tx_pj = int((df_efectivas["tipo_persona_benef"] == "Jurídica").sum()) if "tipo_persona_benef" in df_efectivas.columns else 0
+    monto_pn = float(df_efectivas.loc[df_efectivas["tipo_persona_benef"] == "Natural", "monto_cop"].sum()) if tx_pn else 0.0
+    monto_pj = float(df_efectivas.loc[df_efectivas["tipo_persona_benef"] == "Jurídica", "monto_cop"].sum()) if tx_pj else 0.0
+    
+    # Beneficiarios únicos
+    benef_unicos_pn = int(df_efectivas[df_efectivas["tipo_persona_benef"] == "Natural"]["BENEFICIARIO"].nunique()) if tx_pn and "BENEFICIARIO" in df_efectivas.columns else 0
+    benef_unicos_pj = int(df_efectivas[df_efectivas["tipo_persona_benef"] == "Jurídica"]["BENEFICIARIO"].nunique()) if tx_pj and "BENEFICIARIO" in df_efectivas.columns else 0
+    
+    logger.info(f"✅ Métricas globales calculadas: {tx_efectivas:,} TX efectivas de {total_transacciones:,} totales ({efectividad:.1f}%)")
+    
+    return {
+        "total_transacciones": total_transacciones,
+        "tx_efectivas": tx_efectivas,
+        "efectividad": efectividad,
+        "monto_total": monto_total,
+        "monto_promedio": monto_promedio,
+        "monto_mediana": monto_mediana,
+        "comisiones_totales": comisiones_totales,
+        "tx_pn": tx_pn,
+        "tx_pj": tx_pj,
+        "monto_pn": monto_pn,
+        "monto_pj": monto_pj,
+        "benef_unicos_pn": benef_unicos_pn,
+        "benef_unicos_pj": benef_unicos_pj,
+        "df_efectivas": df_efectivas  # Para uso posterior
+    }
+
+
+def mostrar_tabla_paginada(df: pd.DataFrame, titulo: str = "Transacciones", filas_por_pagina: int = 50, key_prefix: str = "tabla"):
+    """
+    Muestra una tabla con paginación para mejorar performance con datasets grandes.
+    
+    Args:
+        df: DataFrame a mostrar
+        titulo: Título de la tabla
+        filas_por_pagina: Número de filas por página
+        key_prefix: Prefijo único para los widgets de Streamlit
+    """
+    total_filas = len(df)
+    
+    if total_filas == 0:
+        st.info(f"No hay datos para mostrar en {titulo}")
+        return
+    
+    # Calcular número de páginas
+    total_paginas = (total_filas + filas_por_pagina - 1) // filas_por_pagina
+    
+    if total_paginas == 1:
+        # Si solo hay una página, mostrar todo sin paginación
+        st.dataframe(df, use_container_width=True, height=400)
+        st.caption(f"📊 Total: {total_filas:,} registros")
+    else:
+        # Mostrar controles de paginación
+        col1, col2, col3 = st.columns([2, 1, 2])
+        
+        with col2:
+            pagina = st.number_input(
+                "Página",
+                min_value=1,
+                max_value=total_paginas,
+                value=1,
+                step=1,
+                key=f"{key_prefix}_pagina"
+            )
+        
+        # Calcular índices
+        inicio = (pagina - 1) * filas_por_pagina
+        fin = min(inicio + filas_por_pagina, total_filas)
+        
+        # Mostrar datos de la página actual
+        df_pagina = df.iloc[inicio:fin]
+        st.dataframe(df_pagina, use_container_width=True, height=400)
+        
+        # Info de paginación
+        st.caption(f"📊 Mostrando {inicio + 1} - {fin} de {total_filas:,} registros | Página {pagina} de {total_paginas}")
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False, max_entries=10)
 def resumen_por_cliente(df_completo: pd.DataFrame, lista_clientes: list[str]) -> dict:
     """Pre-calcula resúmenes por cliente para no recalcular en cada render."""
     out = {}
@@ -1107,27 +1219,29 @@ st.markdown("---")
 st.markdown("## 🟦 Métricas del Negocio")
 st.caption("Indicadores objetivos de operación y comportamiento transaccional")
 
-# Global: TX efectivas
-df_relevantes = df_completo[df_completo["tx_efectiva"]].copy()
+# ⚡ Métricas globales con cache (optimizado para Streamlit Cloud)
+metricas_globales = calcular_metricas_globales_cached(
+    df_completo,
+    tuple(ESTADOS_EFECTIVOS)  # Tupla para ser hasheable
+)
 
-# Métricas globales calculadas directamente
-total_transacciones_global = len(df_completo)
-tx_relevantes_global = len(df_relevantes)
-tasa_exito_global = (tx_relevantes_global / total_transacciones_global * 100) if total_transacciones_global > 0 else 0.0
+# Extraer métricas del dict cacheado
+total_transacciones_global = metricas_globales["total_transacciones"]
+tx_relevantes_global = metricas_globales["tx_efectivas"]
+tasa_exito_global = metricas_globales["efectividad"]
+monto_total_global = metricas_globales["monto_total"]
+promedio_tx_global = metricas_globales["monto_promedio"]
 
-monto_total_global = float(df_relevantes["monto_cop"].sum()) if "monto_cop" in df_relevantes.columns else 0.0
-promedio_tx_global = float(df_relevantes["monto_cop"].mean()) if len(df_relevantes) else 0.0
+# Métricas por tipo beneficiario
+tx_pn = metricas_globales["tx_pn"]
+tx_pj = metricas_globales["tx_pj"]
+monto_pn = metricas_globales["monto_pn"]
+monto_pj = metricas_globales["monto_pj"]
+benef_unicos_pn = metricas_globales["benef_unicos_pn"]
+benef_unicos_pj = metricas_globales["benef_unicos_pj"]
 
-
-# Métricas por tipo beneficiario (PN/PJ) sobre TX efectivas
-tx_pn = int((df_relevantes["tipo_persona_benef"] == "Natural").sum()) if "tipo_persona_benef" in df_relevantes.columns else 0
-tx_pj = int((df_relevantes["tipo_persona_benef"] == "Jurídica").sum()) if "tipo_persona_benef" in df_relevantes.columns else 0
-monto_pn = float(df_relevantes.loc[df_relevantes["tipo_persona_benef"] == "Natural", "monto_cop"].sum()) if tx_pn else 0.0
-monto_pj = float(df_relevantes.loc[df_relevantes["tipo_persona_benef"] == "Jurídica", "monto_cop"].sum()) if tx_pj else 0.0
-
-# Beneficiarios únicos por tipo (usando columnas normalizadas)
-benef_unicos_pn = int(df_relevantes[df_relevantes["tipo_persona_benef"] == "Natural"]["BENEFICIARIO"].nunique()) if tx_pn and "BENEFICIARIO" in df_relevantes.columns else 0
-benef_unicos_pj = int(df_relevantes[df_relevantes["tipo_persona_benef"] == "Jurídica"]["BENEFICIARIO"].nunique()) if tx_pj and "BENEFICIARIO" in df_relevantes.columns else 0
+# DataFrame de transacciones efectivas (para cálculos adicionales)
+df_relevantes = metricas_globales["df_efectivas"]
 
 # Frecuencia de transacciones por beneficiario
 frecuencia_pn = (tx_pn / benef_unicos_pn) if benef_unicos_pn > 0 else 0
@@ -3008,10 +3122,15 @@ for idx, cliente in enumerate(lista_clientes):
                 pct_tipo = (cantidad / tx_efectivas_cliente * 100) if tx_efectivas_cliente > 0 else 0
                 st.write(f"• {tipo}: {int(cantidad):,} ({pct_tipo:.1f}%)")
 
-        # Tabla transacciones recientes
+        # Tabla transacciones recientes con paginación
         st.markdown("---")
-        st.markdown("#### 📋 Últimas 50 Transacciones")
-        st.dataframe(df_cliente.head(50), use_container_width=True, height=300)
+        st.markdown("#### 📋 Últimas Transacciones")
+        mostrar_tabla_paginada(
+            df_cliente.head(200),  # Mostrar hasta 200 con paginación
+            titulo="Transacciones del Cliente",
+            filas_por_pagina=50,
+            key_prefix=f"tx_{cliente.replace(' ', '_')}"
+        )
 
         # =========================
         # Top beneficiarios (fijo)
