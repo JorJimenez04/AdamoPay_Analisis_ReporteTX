@@ -16,6 +16,7 @@ import io
 import sys
 import html
 import logging
+import gc
 from pathlib import Path
 from datetime import datetime
 
@@ -43,6 +44,14 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+
+# Optimizaciones de rendimiento y memoria
+sys.setrecursionlimit(3000)
+gc.collect()
+
+# Constantes de límites
+MAX_FILE_SIZE_MB = 100
+MAX_ROWS_WARNING = 100000
 
 
 # =========================
@@ -164,10 +173,24 @@ def validar_columnas_cliente(df: pd.DataFrame, nombre_cliente: str) -> list:
     return columnas_faltantes
 
 
+def validar_tamanio_archivo(uploaded_file):
+    """Valida que el archivo no exceda el límite de tamaño"""
+    if uploaded_file is None:
+        return True, ""
+    
+    MAX_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+    file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else 0
+    
+    if file_size > MAX_SIZE:
+        return False, f"El archivo excede {MAX_FILE_SIZE_MB}MB. Tamaño: {file_size/(1024*1024):.1f}MB"
+    
+    return True, ""
+
+
 # =========================
 # Carga de datos desde Excel
 # =========================
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False, max_entries=10)
 def cargar_datos_clientes(archivo_subido=None):
     """
     Carga datos desde Excel (cada hoja = un cliente/originador) y crea:
@@ -184,7 +207,7 @@ def cargar_datos_clientes(archivo_subido=None):
     if archivo_subido is not None:
         logger.info(f"Cargando datos desde archivo subido: {archivo_subido.name}")
         try:
-            excel_file = pd.ExcelFile(archivo_subido)
+            excel_file = pd.ExcelFile(archivo_subido, engine='openpyxl')
         except Exception as e:
             logger.error(f"Error abriendo archivo Excel subido: {str(e)}")
             st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
@@ -200,7 +223,7 @@ def cargar_datos_clientes(archivo_subido=None):
         logger.info(f"Cargando datos desde ruta local: {ruta_excel}")
         
         try:
-            excel_file = pd.ExcelFile(ruta_excel)
+            excel_file = pd.ExcelFile(ruta_excel, engine='openpyxl')
         except Exception as e:
             logger.error(f"Error abriendo archivo Excel local: {str(e)}")
             st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
@@ -394,10 +417,14 @@ def cargar_datos_clientes(archivo_subido=None):
     logger.info(f"  - Bancos: {bancos_unicos_original} originales -> {bancos_unicos_normalizado} normalizados "
                f"({bancos_unicos_original - bancos_unicos_normalizado} duplicados eliminados)")
     
+    # Limpiar memoria después de procesar datos grandes
+    if len(df_completo) > 50000:
+        gc.collect()
+    
     return df_completo, clientes_info, lista_clientes
 
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False, max_entries=10)
 def resumen_por_cliente(df_completo: pd.DataFrame, lista_clientes: list[str]) -> dict:
     """Pre-calcula resúmenes por cliente para no recalcular en cada render."""
     out = {}
@@ -685,17 +712,22 @@ logger.info("="*50)
 logger.info("Iniciando aplicación AdamoPay - Análisis Transaccional")
 logger.info("="*50)
 
+# Limpiar memoria al inicio
+gc.collect()
+
 # Widget de carga de archivo
 st.markdown("## 📂 Cargar Archivo de Datos")
 st.markdown(
-    """Por favor, sube tu archivo Excel con los datos transaccionales. 
-    El archivo debe contener múltiples hojas, donde cada hoja representa un cliente/originador."""
+    f"""Por favor, sube tu archivo Excel con los datos transaccionales. 
+    El archivo debe contener múltiples hojas, donde cada hoja representa un cliente/originador.
+    
+    **Límite de tamaño:** {MAX_FILE_SIZE_MB}MB por archivo"""
 )
 
 archivo_subido = st.file_uploader(
     "Selecciona el archivo Excel",
     type=["xlsx", "xls"],
-    help="Archivo Excel con transacciones (formato: Data_Clients&TX.xlsx)",
+    help=f"Archivo Excel con transacciones. Máximo {MAX_FILE_SIZE_MB}MB",
     key="file_uploader_main"
 )
 
@@ -705,18 +737,46 @@ lista_clientes = None
 
 # Intentar cargar datos
 if archivo_subido is not None:
-    with st.spinner("📊 Cargando y procesando datos..."):
-        df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido)
+    # Validar tamaño del archivo
+    es_valido, mensaje_error = validar_tamanio_archivo(archivo_subido)
     
-    if df_completo is not None and not df_completo.empty:
-        st.success(f"✅ Datos cargados correctamente: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
+    if not es_valido:
+        st.error(f"⚠️ {mensaje_error}")
+        st.info("💡 **Sugerencia:** Divide tu archivo en partes más pequeñas o filtra datos antiguos.")
+        st.stop()
+    
+    try:
+        with st.spinner("📊 Cargando y procesando datos..."):
+            df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido)
+        
+        if df_completo is not None and not df_completo.empty:
+            # Warning si hay muchas filas
+            if len(df_completo) > MAX_ROWS_WARNING:
+                st.warning(f"⚠️ Dataset grande ({len(df_completo):,} filas). El procesamiento puede ser lento en el plan gratuito.")
+            
+            st.success(f"✅ Datos cargados correctamente: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
+            
+            # Limpiar memoria después de carga grande
+            if len(df_completo) > 50000:
+                gc.collect()
+    
+    except Exception as e:
+        st.error(f"❌ Error al cargar archivo: {str(e)}")
+        logger.error(f"Error crítico al cargar archivo: {str(e)}", exc_info=True)
+        st.info("💡 Intenta con un archivo más pequeño o verifica el formato del Excel.")
+        st.stop()
+
 else:
     # Intentar cargar desde archivo local (modo desarrollo)
-    with st.spinner("📊 Cargando datos desde archivo local..."):
-        df_completo, clientes_info, lista_clientes = cargar_datos_clientes(None)
+    try:
+        with st.spinner("📊 Cargando datos desde archivo local..."):
+            df_completo, clientes_info, lista_clientes = cargar_datos_clientes(None)
+        
+        if df_completo is not None and not df_completo.empty:
+            st.info("ℹ️ Usando archivo local para desarrollo. En producción, sube tu archivo Excel.")
     
-    if df_completo is not None and not df_completo.empty:
-        st.info("ℹ️ Usando archivo local para desarrollo. En producción, sube tu archivo Excel.")
+    except Exception as e:
+        logger.warning(f"No se pudo cargar archivo local: {str(e)}")
 
 # Validar que se cargaron los datos
 if df_completo is None or df_completo.empty:

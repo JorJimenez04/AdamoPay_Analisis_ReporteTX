@@ -13,11 +13,11 @@ font = "sans serif"
 [server]
 # Configuración del servidor
 headless = true
-# port se asigna automáticamente en Streamlit Cloud
 enableCORS = false
 enableXsrfProtection = true
-maxUploadSize = 200
-# fileWatcherType = "none"  # Desactivar en producción para mejor rendimiento
+maxUploadSize = 100
+runOnSave = true
+maxMessageSize = 200
 
 [browser]
 # Configuración del navegador
@@ -27,6 +27,8 @@ gatherUsageStats = false
 # Configuración de ejecución
 magicEnabled = true
 fastReruns = true
+enforceSerializableSessionState = false
+postScriptGC = true
 
 [client]
 # Configuración del cliente
