@@ -4,7 +4,10 @@ Sistema avanzado de análisis de riesgo transaccional con caracterización GAFI,
 
 ## 🚀 Características Principales
 
-- **File Uploader Integrado**: Carga dinámica de archivos Excel sin hardcoding
+- **🎯 Sistema Híbrido de Carga de Datos** ⭐ NUEVO
+  - 📤 **Subir Archivo**: Carga Excel en producción (hasta 100MB)
+  - 🎯 **Datos de Ejemplo**: Demo con datos sintéticos (~470 transacciones, 3 clientes)
+  - 📁 **Archivo Local**: Desarrollo sin subir archivos cada vez
 - **Caracterización GAFI**: Análisis de perfil de riesgo basado en estándares GAFI
 - **Scoring Multicapa**: Sistema de puntuación ponderado (GAFI 40% + UIAF 35% + Operativo 25%)
 - **Alertas Automáticas**: Detección de 6 tipos de alertas con 4 niveles de prioridad
@@ -20,9 +23,10 @@ Sistema avanzado de análisis de riesgo transaccional con caracterización GAFI,
 
 ```
 AdamoPay_Analisis_ReporteTX/
-├── 📄 app.py                          # Aplicación Streamlit principal (2975+ líneas)
-│                                      # ✅ File uploader implementado
-│                                      # ✅ Carga flexible: archivo subido o local
+├── 📄 app.py                          # Aplicación Streamlit principal (3335+ líneas)
+│                                      # ✅ Sistema híbrido de carga: Upload/Demo/Local
+│                                      # ✅ Generador de datos sintéticos para demos
+│                                      # ✅ Optimización de memoria y estabilidad
 │
 ├── 📂 .streamlit/                     # Configuración de Streamlit
 │   ├── config.toml                    # Configuración optimizada para producción
@@ -124,9 +128,30 @@ fpdf2>=2.7.0
    ```
    La aplicación se abrirá en `http://localhost:8501`
 
-2. **Subir archivo de datos**: 
-   - Usa el widget de carga en la interfaz
-   - O coloca `Data_Clients&TX.xlsx` en la carpeta `data/` (modo desarrollo)
+2. **Seleccionar método de carga de datos** (en el sidebar):
+   
+   **📤 Opción 1: Subir Archivo** (Producción)
+   - Sube tu archivo Excel con datos reales
+   - Límite: 100MB por archivo
+   - Ideal para análisis de datos reales
+   
+   **🎯 Opción 2: Datos de Ejemplo** (Demo) ⭐ RECOMENDADO PARA PRUEBAS
+   - Genera automáticamente datos sintéticos
+   - 3 clientes ficticios (TechCorp, RetailMax, FinServ)
+   - ~470 transacciones realistas con:
+     - 85% transacciones efectivas
+     - 70% Personas Naturales / 30% Jurídicas
+     - Montos y fechas realistas
+     - 8 bancos colombianos
+   - Perfecto para:
+     - Demos y presentaciones
+     - Pruebas sin exponer datos reales
+     - Entender funcionalidades
+   
+   **📁 Opción 3: Archivo Local** (Desarrollo)
+   - Coloca `Data_Clients&TX.xlsx` en la carpeta `data/`
+   - Sin necesidad de subir archivos cada vez
+   - Ideal para desarrollo continuo
 
 3. **Ejecutar tests del módulo de riesgo**:
    ```bash
@@ -297,9 +322,12 @@ TARJETAS_CLIENTE = {
 ## 🎯 Flujo de Análisis
 
 ```
-1. Carga de Datos
-   ├── 🆕 Widget de file uploader (producción)
-   ├── 🔄 Fallback a archivo local (desarrollo)
+1. Carga de Datos (Sistema Híbrido)
+   ├── 🎯 Selector de método en sidebar:
+   │   ├── 📤 Subir Archivo (Excel hasta 100MB)
+   │   ├── 🎯 Datos de Ejemplo (generación sintética)
+   │   └── 📁 Archivo Local (modo desarrollo)
+   ├── Validación de tamaño y formato
    ├── Validación de columnas requeridas
    ├── Normalización de beneficiarios (reduce duplicados)
    ├── Normalización de bancos (estandarización)
@@ -351,18 +379,35 @@ Fondos:         #f8f9fa, rgba(248, 249, 250, 0.5)
 ## 🔒 Seguridad y Cumplimiento
 
 - ✅ **File uploader seguro**: Archivos procesados en memoria (no se guardan en disco)
+- ✅ **Validación de tamaño**: Límite de 100MB por archivo para prevenir abusos
 - ✅ **Validación de datos**: Entrada robusta con manejo de errores
-- ✅ **Logging completo**: Operaciones críticas registradas
+- ✅ **Logging completo**: Operaciones críticas registradas (carga, errores, procesamiento)
 - ✅ **Escape HTML**: Prevención de XSS en visualizaciones
 - ✅ **Normalización avanzada**: Beneficiarios y bancos (reduce duplicados por variaciones)
 - ✅ **Filtrado de fechas**: Validación de rangos (>= 2000-01-01)
+- ✅ **Datos sintéticos seguros**: Generador de datos de ejemplo sin información real
+- ✅ **Gestión de memoria**: Garbage collection y límites de cache para estabilidad
 - ✅ **Cumplimiento GAFI/UIAF**: Análisis según estándares internacionales
 - ✅ **Auditoría**: Alertas y riesgos rastreables
 - 🔐 **Autenticación opcional**: Protección con password (configuración secrets.toml)
 
 ## 📝 Versión e Historial
 
-**v2.1.0** - Febrero 2026 🆕
+**v2.2.0** - Febrero 2026 🆕
+- ✅ **Sistema Híbrido de Carga**: 3 métodos (Subir/Demo/Local) con selector en sidebar
+- ✅ **Generador de Datos Sintéticos**: Datos de ejemplo para demos sin archivos reales
+  - 3 clientes ficticios con perfiles variados
+  - 470 transacciones con distribución realista
+  - Beneficiarios PN/PJ, bancos colombianos, montos lognormales
+- ✅ **Optimización de Memoria**: Mejoras para Streamlit Cloud (plan gratuito 1GB)
+  - Límite de carga: 100MB por archivo
+  - Garbage collection automático
+  - Validación de tamaño de archivo
+  - Cache con límite de entradas (max_entries=10)
+- ✅ **Corrección de Errores**: Fix lectura de Excel desde objeto UploadedFile
+- ✅ **UX Mejorada**: Mensajes informativos, warnings para datasets grandes
+
+**v2.1.0** - Febrero 2026
 - ✅ **File uploader implementado**: Carga dinámica sin hardcoding
 - ✅ **Deployment ready**: Configuración completa para Streamlit Cloud
 - ✅ **Normalización avanzada**: Beneficiarios y bancos con reducción de duplicados
