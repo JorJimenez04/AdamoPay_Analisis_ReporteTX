@@ -187,11 +187,234 @@ def validar_tamanio_archivo(uploaded_file):
     return True, ""
 
 
+def generar_datos_ejemplo():
+    """
+    Genera un dataset de ejemplo con estructura realista para demos y pruebas.
+    Simula 3 clientes con transacciones de diferentes tipos.
+    """
+    logger.info("Generando datos de ejemplo para demo...")
+    
+    # Semilla para reproducibilidad
+    np.random.seed(42)
+    
+    # Configuración de clientes
+    clientes_config = [
+        {"nombre": "TechCorp S.A.S", "num_tx": 150},
+        {"nombre": "RetailMax LTDA", "num_tx": 200},
+        {"nombre": "FinServ Colombia", "num_tx": 120}
+    ]
+    
+    # Listas de datos sintéticos
+    beneficiarios_pn = [
+        "JUAN CARLOS RODRIGUEZ GOMEZ", "MARIA FERNANDA LOPEZ MARTINEZ",
+        "CARLOS ANDRES PEREZ SILVA", "ANA MARIA GONZALEZ TORRES",
+        "LUIS EDUARDO RAMIREZ CASTRO", "DIANA PATRICIA MORENO REYES",
+        "JORGE ALBERTO DIAZ MENDOZA", "CLAUDIA MARCELA HERRERA ORTIZ"
+    ]
+    
+    beneficiarios_pj = [
+        "DISTRIBUIDORA DEL NORTE S.A.S", "INVERSIONES COLOMBIA LTDA",
+        "TECNOLOGIA Y SERVICIOS S.A", "COMERCIALIZADORA ANDINA S.A.S",
+        "GRUPO EMPRESARIAL DEL SUR LTDA", "LOGISTICA NACIONAL S.A"
+    ]
+    
+    bancos = [
+        "BANCOLOMBIA", "BANCO DE BOGOTA", "BBVA COLOMBIA",
+        "DAVIVIENDA", "BANCO POPULAR", "COLPATRIA",
+        "BANCO OCCIDENTE", "BANCO AV VILLAS"
+    ]
+    
+    tipos_cuenta = ["AHORROS", "CORRIENTE"]
+    estados = ["PAGADO", "VALIDADO", "PENDIENTE", "RECHAZADO", "ERROR"]
+    tipos_tx = ["PAGO", "TRANSFERENCIA", "RETIRO", "DEPOSITO"]
+    tipos_id_pn = ["CC", "CE", "PA", "TI"]
+    tipos_id_pj = ["NIT", "RUT"]
+    
+    all_data = []
+    
+    # Generar transacciones para cada cliente
+    for cliente_config in clientes_config:
+        cliente_nombre = cliente_config["nombre"]
+        num_tx = cliente_config["num_tx"]
+        
+        fecha_inicio = pd.Timestamp('2025-01-01')
+        fecha_fin = pd.Timestamp('2025-12-31')
+        
+        for i in range(num_tx):
+            # 70% Persona Natural, 30% Jurídica
+            es_pn = np.random.random() < 0.7
+            
+            if es_pn:
+                beneficiario = np.random.choice(beneficiarios_pn)
+                tipo_id = np.random.choice(tipos_id_pn)
+            else:
+                beneficiario = np.random.choice(beneficiarios_pj)
+                tipo_id = np.random.choice(tipos_id_pj)
+            
+            # 85% de transacciones efectivas (PAGADO/VALIDADO)
+            es_efectiva = np.random.random() < 0.85
+            estado = np.random.choice(["PAGADO", "VALIDADO"]) if es_efectiva else np.random.choice(estados)
+            
+            # Montos realistas (distribución sesgada hacia valores bajos)
+            if es_pn:
+                monto = np.random.lognormal(mean=12, sigma=1.2)  # ~100k-500k
+            else:
+                monto = np.random.lognormal(mean=14, sigma=1.5)  # ~500k-5M
+            
+            monto = round(monto, 2)
+            comision = round(monto * np.random.uniform(0.001, 0.015), 2)
+            monto_total = monto + comision
+            
+            # Fecha aleatoria
+            fecha = fecha_inicio + pd.Timedelta(days=np.random.randint(0, 365))
+            hora = f"{np.random.randint(8, 18):02d}:{np.random.randint(0, 60):02d}:{np.random.randint(0, 60):02d}"
+            
+            # ID de transacción
+            tx_id = f"TX{fecha.strftime('%Y%m%d')}{np.random.randint(10000, 99999)}"
+            
+            registro = {
+                "No.": i + 1,
+                "FECHA": fecha,
+                "HORA": hora,
+                "ID DE TRANSACCION": tx_id,
+                "TIPO DE TRANSACCION": np.random.choice(tipos_tx),
+                "TIPO DE IDENTIFICACION": tipo_id,
+                "BENEFICIARIO": beneficiario,
+                "ID DE CLIENTE": f"{np.random.randint(1000000000, 9999999999)}",
+                "BANCO": np.random.choice(bancos),
+                "TIPO DE CUENTA": np.random.choice(tipos_cuenta),
+                "NUMERO DE CUENTA": f"{np.random.randint(100000000, 999999999)}",
+                "MONTO (COP)": monto,
+                "COMISION (COP)": comision,
+                "MONTO TOTAL (COP)": monto_total,
+                "ESTADO": estado,
+                "SALDO (COP)": round(np.random.uniform(100000, 5000000), 2),
+                "DESCRIPCION": f"Pago {'servicios' if es_pn else 'proveedores'}",
+                "cliente": cliente_nombre
+            }
+            
+            all_data.append(registro)
+    
+    logger.info(f"Datos de ejemplo generados: {len(all_data)} transacciones para {len(clientes_config)} clientes")
+    return pd.DataFrame(all_data)
+
+
+def aplicar_transformaciones_columnas(df):
+    """
+    Aplica todas las transformaciones necesarias a un DataFrame que ya tiene columna 'cliente'.
+    Usado para datos de ejemplo y procesamiento unificado.
+    """
+    # Diccionarios para mapeo de nombres normalizados
+    beneficiarios_normalizados = {}
+    bancos_normalizados = {}
+    
+    # Mapeo Excel -> canónico
+    col_map = {
+        "No.": "no",
+        "FECHA": "fecha",
+        "HORA": "hora",
+        "ID DE TRANSACCION": "tx_id",
+        "TIPO DE TRANSACCION": "tipo_tx",
+        "TIPO DE IDENTIFICACION": "tipo_id_benef",
+        "BENEFICIARIO": "beneficiario",
+        "ID DE CLIENTE": "id_cliente",
+        "BANCO": "banco",
+        "TIPO DE CUENTA": "tipo_cuenta",
+        "NUMERO DE CUENTA": "cuenta_numero",
+        "MONTO (COP)": "monto_cop",
+        "COMISION (COP)": "comision_cop",
+        "MONTO TOTAL (COP)": "monto_total_cop",
+        "ESTADO": "estado",
+        "SALDO (COP)": "saldo_cop",
+        "DESCRIPCION": "descripcion",
+    }
+    
+    # Renombrar columnas conocidas
+    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+    
+    # Limpieza de strings
+    for c in ["tx_id", "tipo_tx", "tipo_id_benef", "beneficiario", "id_cliente",
+              "banco", "tipo_cuenta", "cuenta_numero", "estado", "descripcion", "hora", "cliente"]:
+        if c in df.columns:
+            df[c] = df[c].map(_clean_text)
+    
+    # Normalización de beneficiarios
+    if "beneficiario" in df.columns:
+        df["beneficiario_norm"] = df["beneficiario"].apply(normalizar_nombre_entidad)
+        for idx, row in df.iterrows():
+            nombre_original = row["beneficiario"]
+            nombre_normalizado = row["beneficiario_norm"]
+            if nombre_normalizado not in beneficiarios_normalizados and pd.notna(nombre_original):
+                beneficiarios_normalizados[nombre_normalizado] = nombre_original
+        df["beneficiario_canonico"] = df["beneficiario_norm"].map(beneficiarios_normalizados)
+    
+    # Normalización de bancos
+    if "banco" in df.columns:
+        df["banco_norm_avanzado"] = df["banco"].apply(normalizar_nombre_entidad)
+        for idx, row in df.iterrows():
+            nombre_original = row["banco"]
+            nombre_normalizado = row["banco_norm_avanzado"]
+            if nombre_normalizado not in bancos_normalizados and pd.notna(nombre_original):
+                bancos_normalizados[nombre_normalizado] = nombre_original
+        df["banco_canonico"] = df["banco_norm_avanzado"].map(bancos_normalizados)
+    
+    # Normalizaciones útiles
+    df["estado_norm"] = df["estado"].map(_norm_upper) if "estado" in df.columns else None
+    df["tipo_tx_norm"] = df["tipo_tx"].map(_norm_upper) if "tipo_tx" in df.columns else None
+    df["banco_norm"] = df.get("banco_canonico", df["banco"].map(_norm_upper) if "banco" in df.columns else None)
+    
+    # Fecha
+    if "fecha" in df.columns:
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+    
+    # Timestamp combinado
+    if "fecha" in df.columns and "hora" in df.columns:
+        df["fecha_hora"] = pd.to_datetime(
+            df["fecha"].dt.strftime("%Y-%m-%d") + " " + df["hora"].fillna("00:00:00"),
+            errors="coerce",
+        )
+    else:
+        df["fecha_hora"] = df.get("fecha", pd.NaT)
+    
+    # Numéricos
+    for c in ["monto_cop", "comision_cop", "monto_total_cop", "saldo_cop"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    
+    # Bandera TX efectiva
+    df["tx_efectiva"] = df["estado_norm"].isin(ESTADOS_EFECTIVOS)
+    
+    # Tipo persona del beneficiario
+    df["tipo_persona_benef"] = df.get("tipo_id_benef", None).map(clasificar_tipo_persona)
+    
+    # Columnas legacy para compatibilidad
+    df["CLIENTE"] = df["cliente"]
+    df["FECHA"] = df["fecha"]
+    df["HORA"] = df.get("hora", None)
+    df["ID DE TRANSACCION"] = df.get("tx_id", None)
+    df["TIPO DE TRANSACCION"] = df.get("tipo_tx", None)
+    df["TIPO DE IDENTIFICACION"] = df.get("tipo_id_benef", None)
+    df["BENEFICIARIO"] = df.get("beneficiario_canonico", df.get("beneficiario", None))
+    df["ID DE CLIENTE"] = df.get("id_cliente", None)
+    df["BANCO"] = df.get("banco_canonico", df.get("banco", None))
+    df["TIPO DE CUENTA"] = df.get("tipo_cuenta", None)
+    df["NUMERO DE CUENTA"] = df.get("cuenta_numero", None)
+    df["MONTO (COP)"] = df.get("monto_cop", 0)
+    df["COMISION (COP)"] = df.get("comision_cop", 0)
+    df["MONTO TOTAL (COP)"] = df.get("monto_total_cop", 0)
+    df["ESTADO"] = df.get("estado", None)
+    df["SALDO (COP)"] = df.get("saldo_cop", 0)
+    df["DESCRIPCION"] = df.get("descripcion", None)
+    df["TIPO DE TRA"] = df.get("tipo_tx", None)
+    
+    return df
+
+
 # =========================
 # Carga de datos desde Excel
 # =========================
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False, max_entries=10)
-def cargar_datos_clientes(archivo_subido=None):
+def cargar_datos_clientes(archivo_subido=None, usar_datos_ejemplo=False):
     """
     Carga datos desde Excel (cada hoja = un cliente/originador) y crea:
     - columnas canónicas (snake_case)
@@ -200,7 +423,24 @@ def cargar_datos_clientes(archivo_subido=None):
     Args:
         archivo_subido: Archivo Excel subido por el usuario (UploadedFile de Streamlit)
                        Si es None, intenta cargar desde ruta local (modo desarrollo)
+        usar_datos_ejemplo: Si True, genera y usa datos sintéticos de ejemplo
     """
+    # Si se solicitan datos de ejemplo, generarlos directamente
+    if usar_datos_ejemplo:
+        logger.info("Modo DEMO: Generando datos de ejemplo...")
+        df_ejemplo = generar_datos_ejemplo()
+        
+        # El DataFrame ya viene con columna "cliente", procesarlo directamente
+        # como si viniera del Excel pero sin las hojas
+        lista_clientes = sorted(df_ejemplo["cliente"].unique().tolist())
+        clientes_info = {c: len(df_ejemplo[df_ejemplo["cliente"] == c]) for c in lista_clientes}
+        
+        # Aplicar las mismas transformaciones que al Excel
+        df_ejemplo = aplicar_transformaciones_columnas(df_ejemplo)
+        
+        logger.info(f"Datos de ejemplo listos: {len(lista_clientes)} clientes, {len(df_ejemplo)} transacciones")
+        return df_ejemplo, clientes_info, lista_clientes
+    
     excel_file = None
     
     # Si se proporciona un archivo subido, usarlo
@@ -715,79 +955,139 @@ logger.info("="*50)
 # Limpiar memoria al inicio
 gc.collect()
 
-# Widget de carga de archivo
-st.markdown("## 📂 Cargar Archivo de Datos")
-st.markdown(
-    f"""Por favor, sube tu archivo Excel con los datos transaccionales. 
-    El archivo debe contener múltiples hojas, donde cada hoja representa un cliente/originador.
-    
-    **Límite de tamaño:** {MAX_FILE_SIZE_MB}MB por archivo"""
+# Sidebar: Selector de método de carga
+st.sidebar.markdown("## 🔧 Configuración de Datos")
+st.sidebar.markdown("---")
+
+metodo_carga = st.sidebar.radio(
+    "Método de carga de datos:",
+    options=["📤 Subir Archivo", "🎯 Datos de Ejemplo (Demo)", "📁 Archivo Local"],
+    index=0,
+    help="""
+    **Subir Archivo**: Carga tu propio archivo Excel (recomendado para producción)
+    **Datos de Ejemplo**: Usa datos sintéticos para probar la aplicación
+    **Archivo Local**: Busca 'Data_Clients&TX.xlsx' en carpeta data/ (desarrollo)
+    """
 )
 
-archivo_subido = st.file_uploader(
-    "Selecciona el archivo Excel",
-    type=["xlsx", "xls"],
-    help=f"Archivo Excel con transacciones. Máximo {MAX_FILE_SIZE_MB}MB",
-    key="file_uploader_main"
-)
+st.sidebar.markdown("---")
+
+# Widget de carga de archivo
+st.markdown("## 📂 Cargar Datos Transaccionales")
 
 df_completo = None
 clientes_info = None
 lista_clientes = None
 
-# Intentar cargar datos
-if archivo_subido is not None:
-    # Validar tamaño del archivo
-    es_valido, mensaje_error = validar_tamanio_archivo(archivo_subido)
-    
-    if not es_valido:
-        st.error(f"⚠️ {mensaje_error}")
-        st.info("💡 **Sugerencia:** Divide tu archivo en partes más pequeñas o filtra datos antiguos.")
-        st.stop()
-    
-    try:
-        with st.spinner("📊 Cargando y procesando datos..."):
-            df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido)
+# Modo 1: Subir Archivo
+if metodo_carga == "📤 Subir Archivo":
+    st.markdown(
+        f"""Por favor, sube tu archivo Excel con los datos transaccionales. 
+        El archivo debe contener múltiples hojas, donde cada hoja representa un cliente/originador.
         
-        if df_completo is not None and not df_completo.empty:
-            # Warning si hay muchas filas
-            if len(df_completo) > MAX_ROWS_WARNING:
-                st.warning(f"⚠️ Dataset grande ({len(df_completo):,} filas). El procesamiento puede ser lento en el plan gratuito.")
-            
-            st.success(f"✅ Datos cargados correctamente: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
-            
-            # Limpiar memoria después de carga grande
-            if len(df_completo) > 50000:
-                gc.collect()
+        **Límite de tamaño:** {MAX_FILE_SIZE_MB}MB por archivo"""
+    )
     
-    except Exception as e:
-        st.error(f"❌ Error al cargar archivo: {str(e)}")
-        logger.error(f"Error crítico al cargar archivo: {str(e)}", exc_info=True)
-        st.info("💡 Intenta con un archivo más pequeño o verifica el formato del Excel.")
-        st.stop()
+    archivo_subido = st.file_uploader(
+        "Selecciona el archivo Excel",
+        type=["xlsx", "xls"],
+        help=f"Archivo Excel con transacciones. Máximo {MAX_FILE_SIZE_MB}MB",
+        key="file_uploader_main"
+    )
+    
+    if archivo_subido is not None:
+        # Validar tamaño del archivo
+        es_valido, mensaje_error = validar_tamanio_archivo(archivo_subido)
+        
+        if not es_valido:
+            st.error(f"⚠️ {mensaje_error}")
+            st.info("💡 **Sugerencia:** Divide tu archivo en partes más pequeñas o filtra datos antiguos.")
+            st.stop()
+        
+        try:
+            with st.spinner("📊 Cargando y procesando datos..."):
+                df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido=archivo_subido)
+            
+            if df_completo is not None and not df_completo.empty:
+                # Warning si hay muchas filas
+                if len(df_completo) > MAX_ROWS_WARNING:
+                    st.warning(f"⚠️ Dataset grande ({len(df_completo):,} filas). El procesamiento puede ser lento en el plan gratuito.")
+                
+                st.success(f"✅ Datos cargados correctamente: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
+                
+                # Limpiar memoria después de carga grande
+                if len(df_completo) > 50000:
+                    gc.collect()
+        
+        except Exception as e:
+            st.error(f"❌ Error al cargar archivo: {str(e)}")
+            logger.error(f"Error crítico al cargar archivo: {str(e)}", exc_info=True)
+            st.info("💡 Intenta con un archivo más pequeño o verifica el formato del Excel.")
+            st.stop()
 
-else:
-    # Intentar cargar desde archivo local (modo desarrollo)
+# Modo 2: Datos de Ejemplo
+elif metodo_carga == "🎯 Datos de Ejemplo (Demo)":
+    st.info("""
+    ### 🎯 Modo Demo
+    
+    Usando datos sintéticos de ejemplo para probar la aplicación.
+    
+    **Incluye:**
+    - 3 clientes ficticios (TechCorp, RetailMax, FinServ)
+    - ~470 transacciones simuladas
+    - Datos realistas de beneficiarios, bancos y montos
+    - Ideal para entender las funcionalidades sin subir archivos
+    """)
+    
+    if st.button("🚀 Cargar Datos de Ejemplo", type="primary"):
+        try:
+            with st.spinner("📊 Generando datos de ejemplo..."):
+                df_completo, clientes_info, lista_clientes = cargar_datos_clientes(usar_datos_ejemplo=True)
+            
+            if df_completo is not None and not df_completo.empty:
+                st.success(f"✅ Datos de ejemplo cargados: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
+        
+        except Exception as e:
+            st.error(f"❌ Error generando datos de ejemplo: {str(e)}")
+            logger.error(f"Error generando datos de ejemplo: {str(e)}", exc_info=True)
+            st.stop()
+
+# Modo 3: Archivo Local
+elif metodo_carga == "📁 Archivo Local":
+    st.info("""
+    ### 📁 Modo Desarrollo
+    
+    Buscando archivo 'Data_Clients&TX.xlsx' en la carpeta 'data/'.
+    
+    Este modo es útil para desarrollo local sin necesidad de subir archivos cada vez.
+    """)
+    
     try:
         with st.spinner("📊 Cargando datos desde archivo local..."):
-            df_completo, clientes_info, lista_clientes = cargar_datos_clientes(None)
+            df_completo, clientes_info, lista_clientes = cargar_datos_clientes(archivo_subido=None)
         
         if df_completo is not None and not df_completo.empty:
-            st.info("ℹ️ Usando archivo local para desarrollo. En producción, sube tu archivo Excel.")
+            st.success(f"✅ Datos locales cargados: {len(lista_clientes)} clientes, {len(df_completo):,} transacciones")
     
     except Exception as e:
+        st.error(f"❌ Error al cargar archivo local: {str(e)}")
         logger.warning(f"No se pudo cargar archivo local: {str(e)}")
+        st.info("💡 Verifica que el archivo 'Data_Clients&TX.xlsx' exista en la carpeta 'data/'.")
 
 # Validar que se cargaron los datos
 if df_completo is None or df_completo.empty:
     st.warning(
         """⚠️ **No hay datos disponibles**
         
-        Por favor, sube un archivo Excel con el siguiente formato:
-        - Cada hoja representa un cliente/originador
-        - Columnas requeridas: FECHA, BENEFICIARIO, BANCO, MONTO (COP), ESTADO, etc.
+        Por favor, selecciona un método de carga de datos en el panel lateral:
         
-        Si estás desarrollando localmente, coloca el archivo 'Data_Clients&TX.xlsx' en la carpeta 'data/'.
+        - **📤 Subir Archivo**: Sube tu archivo Excel con transacciones
+        - **🎯 Datos de Ejemplo**: Usa datos sintéticos para probar la app
+        - **📁 Archivo Local**: Coloca 'Data_Clients&TX.xlsx' en carpeta 'data/'
+        
+        **Formato requerido:**
+        - Cada hoja = un cliente/originador
+        - Columnas: FECHA, BENEFICIARIO, BANCO, MONTO (COP), ESTADO, etc.
         """
     )
     st.stop()
