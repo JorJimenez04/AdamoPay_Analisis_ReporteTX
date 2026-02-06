@@ -8,20 +8,26 @@ Aplicación web (Streamlit) para el sistema de análisis y reporte transaccional
 - Pre-cálculo / cache de resúmenes por cliente
 """
 
+import sys
+from pathlib import Path
+# ✅ Agregar el directorio src al path (ANTES de importar módulos internos)
+sys.path.append(str(Path(__file__).parent / "src"))
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import io
-import sys
 import html
 import logging
 import gc
-from pathlib import Path
 from datetime import datetime
 
-# Agregar el directorio src al path
-sys.path.append(str(Path(__file__).parent / "src"))
+
+# Tipos para anotaciones
+from config.settings import ESTADOS_EFECTIVOS
+from src.analytics.business_metrics import calcular_business_metrics
+
 
 from config.settings import (
     ESTADOS_EFECTIVOS,
@@ -1109,11 +1115,22 @@ st.caption("Indicadores objetivos de operación y comportamiento transaccional")
 # Global: TX efectivas
 df_relevantes = df_completo[df_completo["tx_efectiva"]].copy()
 
-total_transacciones_global = len(df_completo)
-tx_relevantes_global = len(df_relevantes)
+# ✅ Métricas globales: usar módulo (para no duplicar lógica)
+bm = calcular_business_metrics(
+    df_completo,
+    col_fecha="fecha",
+    col_monto="monto_cop",
+    col_estado="estado",
+    estados_efectivos=ESTADOS_EFECTIVOS
+)
+# Mantener tus variables existentes (compatibilidad con todo lo que viene después)
+total_transacciones_global = bm.tx_total
+tx_relevantes_global = bm.tx_efectivas
+tasa_exito_global = bm.efectividad * 100
+
 monto_total_global = float(df_relevantes["monto_cop"].sum()) if "monto_cop" in df_relevantes.columns else 0.0
 promedio_tx_global = float(df_relevantes["monto_cop"].mean()) if len(df_relevantes) else 0.0
-tasa_exito_global = (tx_relevantes_global / total_transacciones_global * 100) if total_transacciones_global > 0 else 0.0
+
 
 # Métricas por tipo beneficiario (PN/PJ) sobre TX efectivas
 tx_pn = int((df_relevantes["tipo_persona_benef"] == "Natural").sum()) if "tipo_persona_benef" in df_relevantes.columns else 0
