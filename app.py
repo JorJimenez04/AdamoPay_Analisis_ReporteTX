@@ -442,12 +442,14 @@ def cargar_datos_clientes(archivo_subido=None, usar_datos_ejemplo=False):
         return df_ejemplo, clientes_info, lista_clientes
     
     excel_file = None
+    origen_datos = None  # 'subido' o 'local'
     
     # Si se proporciona un archivo subido, usarlo
     if archivo_subido is not None:
         logger.info(f"Cargando datos desde archivo subido: {archivo_subido.name}")
         try:
             excel_file = pd.ExcelFile(archivo_subido, engine='openpyxl')
+            origen_datos = 'subido'
         except Exception as e:
             logger.error(f"Error abriendo archivo Excel subido: {str(e)}")
             st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
@@ -464,6 +466,7 @@ def cargar_datos_clientes(archivo_subido=None, usar_datos_ejemplo=False):
         
         try:
             excel_file = pd.ExcelFile(ruta_excel, engine='openpyxl')
+            origen_datos = 'local'
         except Exception as e:
             logger.error(f"Error abriendo archivo Excel local: {str(e)}")
             st.error(f"⚠️ Error abriendo archivo Excel: {str(e)}")
@@ -499,7 +502,8 @@ def cargar_datos_clientes(archivo_subido=None, usar_datos_ejemplo=False):
 
     for sheet_name in excel_file.sheet_names:
         try:
-            df = pd.read_excel(ruta_excel, sheet_name=sheet_name)
+            # Leer la hoja desde el objeto ExcelFile directamente
+            df = pd.read_excel(excel_file, sheet_name=sheet_name)
             logger.info(f"Cargando hoja: {sheet_name} ({len(df)} registros)")
         except Exception as e:
             logger.error(f"Error cargando hoja '{sheet_name}': {str(e)}")
