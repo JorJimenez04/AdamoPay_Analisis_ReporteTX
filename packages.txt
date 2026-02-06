@@ -1,4 +1,2 @@
-# Dependencias del sistema operativo para Streamlit Cloud
-# Este archivo debe estar vacío para este proyecto
-# Solo agregar paquetes si Streamlit Cloud lo requiere explícitamente
+
 
