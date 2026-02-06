@@ -1,24 +1,6 @@
-# ===================================
-# DEPENDENCIAS PARA STREAMLIT CLOUD
-# ===================================
-
-# Web Framework
-streamlit==1.31.1
-
-# Análisis de datos
-pandas==2.1.4
-numpy==1.26.3
-
-# Visualización
-plotly==5.18.0
-
-# Excel
-openpyxl==3.1.2
-
-# Utilidades
-python-dateutil==2.8.2
-
-# Notas:
-# - Versiones específicas para estabilidad en Streamlit Cloud
-# - Streamlit Cloud usa Python 3.11+ por defecto
-# - No incluir dependencias de sistema (instalar vía packages.txt si es necesario)
+streamlit
+pandas
+numpy
+plotly
+openpyxl
+python-dateutil
